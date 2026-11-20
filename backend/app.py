@@ -2,7 +2,7 @@
 Start (development):  python app.py
 Start (production):   waitress-serve --threads=8 app:app   (ONE process, see storage.py)
 """
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
@@ -20,6 +20,12 @@ import users
 
 def create_app():
     app = Flask(__name__)
+    @app.before_request
+    def debug_request():
+        print(
+            f"[REQUEST] {request.method} {request.path}",
+            flush=True
+        )
     app.config["MAX_CONTENT_LENGTH"] = 1_000_000     # reject huge requests
     # Login uses an Authorization header (not cookies), so other websites cannot make the browser
     # send credentials on their own. That is why classic CSRF tokens are not needed here.
