@@ -1,0 +1,7 @@
+# secrets and live data must never go to GitHub
+backend/.env
+backend/data/*.json
+backend/data/.secret_key
+__pycache__/
+*.pyc
+.venv/
