@@ -4,6 +4,7 @@
 This file is called mailer.py and NOT email.py on purpose:
 Python already has a built-in package called "email".
 """
+
 import smtplib
 from email.message import EmailMessage
 
@@ -11,19 +12,23 @@ import config
 
 
 def send_verification_code(to_address, code):
-    # ALWAYS print the verification code to the terminal
-    print(f"\n{'=' * 45}", flush=True)
-    print(f"[CHATISFYING] Verification code", flush=True)
+
+    # ALWAYS print verification code
+    print("\n" + "=" * 45, flush=True)
+    print("[CHATISFYING] Verification code", flush=True)
     print(f"Email: {to_address}", flush=True)
     print(f"CODE: {code}", flush=True)
-    print(f"{'=' * 45}\n", flush=True)
+    print("=" * 45 + "\n", flush=True)
 
-    # No SMTP configured: terminal output is enough
+    # SMTP not configured
     if not config.SMTP_HOST:
-        print("[CHATISFYING] SMTP not configured. Email skipped.", flush=True)
+        print(
+            "[CHATISFYING] SMTP not configured. Email skipped.",
+            flush=True
+        )
         return
 
-    # SMTP configured: attempt to send email
+    # Try sending email
     try:
         msg = EmailMessage()
         msg["Subject"] = "Your Chatisfying code"
@@ -41,14 +46,24 @@ def send_verification_code(to_address, code):
             config.SMTP_PORT,
             timeout=15
         ) as smtp:
+
             smtp.starttls()
 
             if config.SMTP_USER:
-                smtp.login(config.SMTP_USER, config.SMTP_PASSWORD)
+                smtp.login(
+                    config.SMTP_USER,
+                    config.SMTP_PASSWORD
+                )
 
             smtp.send_message(msg)
 
-        print("[CHATISFYING] Email successfully sent.", flush=True)
+        print(
+            "[CHATISFYING] Email successfully sent.",
+            flush=True
+        )
 
     except Exception as e:
-        print(f"[CHATISFYING] Email sending failed: {e}", flush=True)
+        print(
+            f"[CHATISFYING] Email sending failed: {e!r}",
+            flush=True
+        )
