@@ -20,6 +20,10 @@ import users
 
 def create_app():
     app = Flask(__name__)
+    @app.route("/debug")
+    def debug():
+        print("[DEBUG] DEBUG ENDPOINT CALLED!", flush=True)
+        return "Chatisfying Backend Debug OK!"
     @app.before_request
     def debug_request():
         print(
