@@ -8,6 +8,9 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
+# PostgreSQL connection string (e.g. from Neon). Empty = use JSON files. It contains a password: never log it.
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
