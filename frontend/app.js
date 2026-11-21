@@ -37,6 +37,7 @@ async function init() {
   if (!state.me) return;
 
   buildShell(app);
+  window.addEventListener("storage", (e) => { if (e.key === "chatisfying_token") location.reload(); });
   window.addEventListener("hashchange", route);
   route();
   refreshInvites();
