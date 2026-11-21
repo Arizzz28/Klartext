@@ -32,6 +32,11 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin").strip()
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if o.strip()]
 
+# Email through the Brevo web API (works on Render's free plan, because it uses HTTPS instead of SMTP ports).
+# BREVO_API_KEY is a secret. BREVO_SENDER must be a sender address you verified in Brevo.
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
+BREVO_SENDER = os.environ.get("BREVO_SENDER", "").strip()
+
 SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER = os.environ.get("SMTP_USER", "").strip()
