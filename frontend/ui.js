@@ -29,6 +29,15 @@ const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   send: '<path d="M4 12 20 4l-4 16-4-6-8-2Z"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  smile: '<circle cx="12" cy="12" r="9"/><path d="M8.5 14.2a4.2 4.2 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/>',
+  clip: '<path d="m20 11-8.6 8.6a5 5 0 0 1-7-7l9-9a3.3 3.3 0 0 1 4.7 4.7l-9 9a1.7 1.7 0 0 1-2.4-2.4L14.5 6"/>',
+  reply: '<path d="M10 8 4 13l6 5v-3.5c5 0 8 1.5 10 5-.5-5.5-3.5-9-10-9.5Z"/>',
+  edit: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
+  flag: '<path d="M5 21V4m0 0h11l-2 4 2 4H5"/>',
+  more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
+  file: '<path d="M7 3h7l5 5v13H7V3Z"/><path d="M14 3v5h5"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.7"/><path d="m21 16-5-5-9 9"/>',
 };
 
 export function icon(name) {
@@ -103,7 +112,7 @@ export function toast(message, kind = "info") {
   setTimeout(() => el.remove(), 4000);
 }
 
-export function modal(title, content, onClose = null) {
+export function modal(title, content, onClose = null, closable = true) {
   const previous = document.activeElement;
   let closed = false;
   const close = () => {
@@ -114,12 +123,12 @@ export function modal(title, content, onClose = null) {
     previous?.focus?.();
     if (onClose) onClose();
   };
-  const onKey = (e) => { if (e.key === "Escape") close(); };
-  const overlay = h("div", { class: "overlay", onClick: (e) => { if (e.target === overlay) close(); } },
+  const onKey = (e) => { if (closable && e.key === "Escape") close(); };
+  const overlay = h("div", { class: "overlay", onClick: (e) => { if (closable && e.target === overlay) close(); } },
     h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-label": title },
       h("div", { class: "dialog-head" },
         h("h2", {}, title),
-        h("button", { class: "icon-btn", type: "button", "aria-label": "Close", onClick: close }, icon("close"))),
+        closable ? h("button", { class: "icon-btn", type: "button", "aria-label": "Close", onClick: close }, icon("close")) : null),
       content));
   document.body.append(overlay);
   document.addEventListener("keydown", onKey);
@@ -170,3 +179,62 @@ export function applyTheme(mode) {
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(localStorage.getItem(THEME_KEY));
+
+export function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+// Small pop-up menu next to a button. items: [{label, onClick, danger}]
+export function openMenu(anchor, items) {
+  document.querySelector(".menu")?.remove();
+  const close = () => { menu.remove(); document.removeEventListener("pointerdown", outside, true); document.removeEventListener("keydown", onKey); };
+  const outside = (e) => { if (!menu.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const menu = h("div", { class: "menu", role: "menu" }, items.map((item) =>
+    h("button", { class: `menu-item${item.danger ? " danger-text" : ""}`, type: "button", role: "menuitem",
+      onClick: () => { close(); item.onClick(); } }, item.label)));
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  const left = Math.min(Math.max(8, r.right - menu.offsetWidth), window.innerWidth - menu.offsetWidth - 8);
+  const top = r.bottom + 6 + menu.offsetHeight > window.innerHeight ? Math.max(8, r.top - menu.offsetHeight - 6) : r.bottom + 6;
+  menu.style.left = left + "px";
+  menu.style.top = top + "px";
+  setTimeout(() => { document.addEventListener("pointerdown", outside, true); document.addEventListener("keydown", onKey); });
+  return close;
+}
+
+// A chosen picture, scaled down to at most `max` pixels and below ~300 KB, as a data URL (chat backgrounds).
+export function fileToBackground(file, max = 1280) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith("image/")) return reject(new Error("Please choose an image file."));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let scale = Math.min(1, max / Math.max(img.width, img.height));
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const data = canvas.toDataURL("image/jpeg", 0.7);
+        if (data.length < 400_000) return resolve(data);
+        scale *= 0.75;
+      }
+      reject(new Error("That image is too detailed. Try a smaller one."));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That image could not be read.")); };
+    img.src = url;
+  });
+}
+
+export function lightbox(src) {
+  const close = () => { box.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const box = h("div", { class: "lightbox", onClick: close }, h("img", { src, alt: "" }));
+  document.body.append(box);
+  document.addEventListener("keydown", onKey);
+}

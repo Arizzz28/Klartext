@@ -47,3 +47,14 @@ TOKEN_TTL = 7 * 24 * 3600      # login stays valid for 7 days
 CODE_TTL = 10 * 60             # verification code valid for 10 minutes
 MAX_CODE_ATTEMPTS = 5
 MAX_MESSAGE_LENGTH = 2000
+
+# Object storage for uploads (any S3-compatible service: Backblaze B2, Cloudflare R2, ...).
+# All five values are secrets/settings from your provider. If one is empty, uploads are switched off.
+S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", "").strip()
+S3_REGION = os.environ.get("S3_REGION", "auto").strip() or "auto"
+S3_BUCKET = os.environ.get("S3_BUCKET", "").strip()
+S3_ACCESS_KEY_ID = os.environ.get("S3_ACCESS_KEY_ID", "").strip()
+S3_SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY", "").strip()
+UPLOAD_URL_TTL = 3 * 3600        # a prepared upload link works for 3 hours (big files need time)
+DOWNLOAD_URL_TTL = 6 * 3600      # a download link works for 6 hours
+HARD_MAX_UPLOAD_MB = 200         # nobody (not even an admin setting) can go above this

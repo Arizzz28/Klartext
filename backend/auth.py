@@ -7,6 +7,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
+import appsettings
 import config
 import mailer
 import storage
@@ -57,7 +58,12 @@ def register_start():
         if key in db["users"]:
             raise ApiError("That username is already taken.", 409)
 
-        if not _is_allowed(username, db["whitelist"]):
+        # Registration mode is set by the admins: whitelist | open_approval | closed
+        mode = appsettings.get()["registration_mode"]
+        is_main_admin = key == config.ADMIN_USERNAME.lower()
+        if mode == "closed" and not is_main_admin:
+            raise ApiError("Registration is closed at the moment.", 403)
+        if mode == "whitelist" and not _is_allowed(username, db["whitelist"]):
             raise ApiError(
                 "That username is not on the whitelist. Ask an admin to add it.",
                 403
@@ -165,6 +171,7 @@ def register_complete():
             "display_name": username,
             "avatar": "",
             "is_admin": is_admin,
+            "role": "admin" if is_admin else "user",
             "status": "active" if is_admin else "pending",
             "token_version": 0,
             "created": now,

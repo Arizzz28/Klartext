@@ -62,3 +62,46 @@ Without SMTP settings the verification code is **printed in the backend terminal
 - All text is inserted with `textContent`, so messages can't inject HTML.
 - The token lives in `localStorage`. That is fine for a prototype; a stricter setup would use HttpOnly cookies.
 - JSON is a prototype database. For many users, switch to SQLite or PostgreSQL.
+
+## Version 2
+
+New: reactions and emoji, replies, editing and deleting messages, file / picture / video uploads, chat backgrounds,
+clearing chats, reports and moderators, an extended admin area (create users, roles, delete users completely,
+settings, audit log) and a loading screen with picture and music.
+
+### What changed in the data
+- Messages now live in real tables (`messages`, `reactions`, `attachments`, `reports`, `audit_log`, ...).
+  Neon/PostgreSQL if `DATABASE_URL` is set, otherwise a local SQLite file `backend/data/chatisfying.db`.
+- On the first start the old messages are copied into the new table automatically. Make a backup of your Neon database first.
+- Users, groups, invitations and settings stay in the key-value store (`storage.py`), as before.
+
+### Roles
+`user` < `moderator` < `admin`. The account named in `ADMIN_USERNAME` is the protected main admin.
+Moderators can delete messages, mute people (timeouts) and handle reports. Admins can do everything.
+
+### Privacy rules for admins
+1. Group chats: admins may read them (the group info says so).
+2. Private chats: not readable by default. Admins see reported messages (with context) and can clear a chat without reading it.
+3. Emergency access: needs a written reason. Both people see a notice in the chat and the audit log records it.
+
+### File storage (needed for uploads and the loading screen)
+Files go from the browser straight into an S3-compatible bucket (for example Backblaze B2 or Cloudflare R2).
+The server only creates short-lived signed links. Set these variables on the server (never in GitHub):
+
+```
+S3_ENDPOINT_URL=...   S3_REGION=...   S3_BUCKET=...   S3_ACCESS_KEY_ID=...   S3_SECRET_ACCESS_KEY=...
+```
+
+Steps (check the provider's current documentation for the exact menu names):
+1. Create a **private** bucket and an access key that may read and write only this bucket.
+2. Note the S3 endpoint and region the provider shows for the bucket.
+3. Add a CORS rule to the bucket: allowed origin = your frontend address (for example `https://YOURNAME.github.io`),
+   methods `PUT`, `GET`, `HEAD`, allowed header `Content-Type`. Without it the browser blocks uploads.
+4. Without these variables everything else still works; uploads and the loading screen are switched off.
+
+Limits (maximum sizes, quota per person, blocked file types) are set in **Admin -> Settings**. The hard cap is 200 MB per file.
+
+### Still open
+Typing indicators, unread counters, push notifications, password reset by email, two-factor login for admins.
+Remove the debug output (verification codes in the log, `/debug`, request logs) before real use.
+

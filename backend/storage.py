@@ -30,6 +30,7 @@ DEFAULTS = {
     "group_messages": [],
     "invitations": [],
     "verification": {},     # key: lowercase username
+    "settings": {},         # global settings changed by admins (see appsettings.py)
 }
 
 # =====================================================================================
@@ -141,6 +142,11 @@ def transaction(*names):
         yield db
         for n, data in db.items():
             conn.execute("UPDATE kv SET data = %s WHERE name = %s", (Jsonb(data), n))
+
+
+def get_pool():
+    """The PostgreSQL connection pool, or None in JSON-file mode (used by db.py)."""
+    return _pool
 
 
 def ensure_files():

@@ -4,7 +4,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
-import config
+import chat_service
 import storage
 from security import (ApiError, clean_avatar, clean_text, find_user, json_body, login_required,
                       public_user)
@@ -48,12 +48,11 @@ def _new_id(groups):
 def my_groups():
     me = g.user["username"]
     groups = storage.read("groups")
-    last = {}
-    for m in storage.read("group_messages"):
-        last[m["group_id"]] = {"text": m["text"], "ts": m["ts"], "from": m["from"]}
-    mine = [_summary(gr, me, last.get(gr["id"])) for gr in groups.values() if _role(gr, me)]
-    mine.sort(key=lambda s: (s["last"] or {"ts": 0})["ts"], reverse=True)
-    return jsonify(mine)
+    mine = [gr for gr in groups.values() if _role(gr, me)]
+    last = chat_service.last_group_messages(g.user, [gr["id"] for gr in mine])
+    result = [_summary(gr, me, last.get(gr["id"])) for gr in mine]
+    result.sort(key=lambda s: (s["last"] or {"ts": 0})["ts"], reverse=True)
+    return jsonify(result)
 
 
 @bp.get("/discover")
@@ -132,18 +131,21 @@ def join_group(gid):
 @login_required
 def leave_group(gid):
     me = g.user["username"]
-    with storage.transaction("groups", "group_messages", "invitations") as db:
+    purge = False
+    with storage.transaction("groups", "invitations") as db:
         group = _get_group(db, gid)
         _need_member(group)
         admins = [u for u, r in group["members"].items() if r == "admin"]
         if len(group["members"]) == 1:        # last person: the group disappears
             del db["groups"][gid]
-            db["group_messages"] = [m for m in db["group_messages"] if m["group_id"] != gid]
             db["invitations"] = [i for i in db["invitations"] if i["group_id"] != gid]
+            purge = True
         elif admins == [me]:
             raise ApiError("You are the last admin. Make someone else an admin before leaving.", 409)
         else:
             del group["members"][me]
+    if purge:
+        chat_service.purge_chat("group", gid)
     return jsonify({"message": "You left the group."})
 
 
@@ -175,24 +177,3 @@ def promote_member(gid, username):
             raise ApiError("That user is not in this group.", 404)
         group["members"][name] = "admin"
     return jsonify({"message": "Member is now an admin."})
-
-
-@bp.get("/<gid>/messages")
-@login_required
-def get_group_messages(gid):
-    _need_member(_get_group({"groups": storage.read("groups")}, gid))
-    after = request.args.get("after", 0, type=int)
-    msgs = [m for m in storage.read("group_messages") if m["group_id"] == gid and m["id"] > after]
-    return jsonify([{"id": m["id"], "from": m["from"], "text": m["text"], "ts": m["ts"]} for m in msgs])
-
-
-@bp.post("/<gid>/messages")
-@login_required
-def send_group_message(gid):
-    text = clean_text(json_body().get("text"), "Message", config.MAX_MESSAGE_LENGTH)
-    with storage.transaction("groups", "group_messages") as db:
-        _need_member(_get_group(db, gid))
-        msg = {"id": storage.next_id(db["group_messages"]), "group_id": gid,
-               "from": g.user["username"], "text": text, "ts": time.time()}
-        db["group_messages"].append(msg)
-    return jsonify({"id": msg["id"], "from": msg["from"], "text": msg["text"], "ts": msg["ts"]}), 201

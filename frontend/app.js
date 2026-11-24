@@ -1,7 +1,8 @@
 // Main logic: builds the page frame (sidebar, list, main area) and switches pages by URL hash.
-import { get } from "./api.js";
+import { get, post } from "./api.js";
 import { logout, requireLogin } from "./auth.js";
-import { avatar, brand, h, icon } from "./ui.js";
+import { startLoading } from "./loading.js";
+import { avatar, brand, h, icon, modal, toast } from "./ui.js";
 import * as chats from "./pages/chats.js";
 import * as groups from "./pages/groups.js";
 import * as profile from "./pages/profile.js";
@@ -14,40 +15,47 @@ const NAV = [
   { page: "groups", label: "Groups", icon: "groups" },
   { page: "profile", label: "Profile", icon: "profile" },
   { page: "settings", label: "Settings", icon: "settings" },
-  { page: "admin", label: "Admin", icon: "admin", adminOnly: true },
+  { page: "admin", label: "Admin", icon: "admin", roles: ["admin", "moderator"] },
 ];
 
 // Shared with all pages
-export const state = { me: null, refreshInvites, onMeChanged: renderMe };
+export const state = { me: null, config: {}, refreshInvites, onMeChanged: renderMe };
 
-let shell, listHost, mainHost, meBox, inviteBadge;
+let shell, listHost, mainHost, meBox, inviteBadge, bannerBox;
 const navLinks = {};
 let cleanup = null;
 let routeToken = 0;
 
 async function init() {
+  const loader = startLoading();
   const app = document.getElementById("app");
   try {
     state.me = await requireLogin();
   } catch (e) {
+    loader.done();
     app.className = "boot";
     app.replaceChildren(h("p", {}, e.message), h("button", { class: "btn primary", onClick: () => location.reload() }, "Try again"));
     return;
   }
   if (!state.me) return;
 
+  try { state.config = await get("/api/config"); } catch { /* the app works without it */ }
+
   buildShell(app);
   window.addEventListener("storage", (e) => { if (e.key === "chatisfying_token") location.reload(); });
   window.addEventListener("hashchange", route);
-  route();
+  await route();
   refreshInvites();
   setInterval(refreshInvites, 15000);
+  loader.done();
+  if (state.me.must_change_password) forcePasswordChange();
 }
 
 function buildShell(app) {
   inviteBadge = h("span", { class: "badge", hidden: true, "aria-label": "Pending invitations" });
-  const links = NAV.filter((n) => !n.adminOnly || state.me.is_admin).map((n) => {
-    const a = h("a", { class: "nav-link", href: `#/${n.page}` }, icon(n.icon), h("span", { class: "label" }, n.label));
+  const links = NAV.filter((n) => !n.roles || n.roles.includes(state.me.role)).map((n) => {
+    const label = n.page === "admin" && state.me.role === "moderator" ? "Moderation" : n.label;
+    const a = h("a", { class: "nav-link", href: `#/${n.page}` }, icon(n.icon), h("span", { class: "label" }, label));
     if (n.page === "groups") a.append(inviteBadge);
     navLinks[n.page] = a;
     return a;
@@ -57,9 +65,17 @@ function buildShell(app) {
   listHost = h("aside", { class: "list" });
   mainHost = h("main", { class: "main" });
   shell = h("div", { class: "shell" }, sidebar, listHost, mainHost);
-  app.className = "";
-  app.replaceChildren(shell);
+  bannerBox = h("div", { class: "announcement", role: "status", hidden: true });
+  app.className = "ready";
+  app.replaceChildren(bannerBox, shell);
+  drawBanner();
   renderMe();
+}
+
+function drawBanner() {
+  const text = state.config.announcement || "";
+  bannerBox.textContent = text;
+  bannerBox.hidden = !text;
 }
 
 function renderMe() {
@@ -74,7 +90,31 @@ async function refreshInvites() {
     const invites = await get("/api/invitations");
     inviteBadge.textContent = invites.length;
     inviteBadge.hidden = invites.length === 0;
+    state.config = { ...state.config, ...(await get("/api/config")) };      // also picks up a new announcement
+    drawBanner();
   } catch { /* not important enough to show an error */ }
+}
+
+// Accounts created or reset by an admin must choose their own password before using the app.
+function forcePasswordChange() {
+  const input = (autocomplete) => h("input", { class: "input", type: "password", required: true, minlength: "8", autocomplete });
+  const cur = input("current-password"), next = input("new-password"), again = input("new-password");
+  const msg = h("p", { class: "form-msg", role: "alert" });
+  const field = (label, el) => h("label", { class: "field" }, h("span", { class: "field-label" }, label), el);
+  const form = h("form", { class: "dialog-body" },
+    h("p", {}, "An admin set your password. Please choose a new one before you continue."),
+    field("Current password", cur), field("New password (min. 8 characters)", next), field("Repeat new password", again),
+    msg, h("div", { class: "dialog-actions" }, h("button", { class: "btn primary", type: "submit" }, "Change password")));
+  modal("Choose a new password", form, null, false);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (next.value !== again.value) { msg.textContent = "The new passwords don't match."; msg.className = "form-msg error"; return; }
+    try {
+      await post("/api/me/password", { current: cur.value, new: next.value });
+      toast("Password changed. Please log in again.");
+      setTimeout(logout, 1200);
+    } catch (err) { msg.textContent = err.message; msg.className = "form-msg error"; }
+  });
 }
 
 async function route() {
@@ -83,7 +123,8 @@ async function route() {
   const name = parts[0] || "chats";
   const arg = parts[1] || null;
   const page = pages[name];
-  if (!page || (name === "admin" && !state.me.is_admin)) { location.hash = "#/chats"; return; }
+  const allowed = name !== "admin" || ["admin", "moderator"].includes(state.me.role);
+  if (!page || !allowed) { location.hash = "#/chats"; return; }
 
   shell.classList.toggle("no-list", !page.usesList);
   shell.classList.toggle("chat-open", Boolean(arg));

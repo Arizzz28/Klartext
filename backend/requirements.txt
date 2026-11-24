@@ -3,3 +3,4 @@ flask-cors>=4.0
 python-dotenv>=1.0
 waitress
 psycopg[binary,pool]>=3.2
+boto3>=1.34

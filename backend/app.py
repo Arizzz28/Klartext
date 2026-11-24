@@ -14,9 +14,14 @@ from security import ApiError
 
 import admin
 import auth
+import chat_service
+import db
 import groups
 import invitations
 import messages
+import moderation
+import settings
+import uploads
 import users
 
 # Render sets RENDER_GIT_COMMIT automatically. It shows which commit is really running.
@@ -30,8 +35,10 @@ def create_app():
     # send credentials on their own. That is why classic CSRF tokens are not needed here.
     CORS(app, origins=config.ALLOWED_ORIGINS, allow_headers=["Content-Type", "Authorization"])
     storage.ensure_files()
+    db.init()
+    chat_service.migrate_legacy()
 
-    for module in (auth, users, messages, groups, invitations, admin):
+    for module in (auth, users, messages, groups, invitations, admin, moderation, settings, uploads):
         app.register_blueprint(module.bp)
 
     # DEBUG ONLY: logs every request (method + path, never headers, bodies or query strings).

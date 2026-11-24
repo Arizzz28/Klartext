@@ -14,31 +14,16 @@ export async function renderGroupChat({ main, id, state, onChanged }) {
     return () => {};
   }
 
-  const people = new Map();
   const isAdmin = () => group.role === "admin";
-  const indexPeople = () => { people.clear(); group.members.forEach((m) => people.set(m.username, m)); };
-  indexPeople();
-
-  const header = h("header", { class: "chat-head" });
   const aside = h("aside", { class: "info", "aria-label": "Group info" });
   let layout;
 
-  function fillHeader() {
-    header.replaceChildren(
-      h("a", { class: "icon-btn back", href: "#/groups", "aria-label": "Back to groups" }, icon("back")),
-      avatar(group),
-      h("div", { class: "chat-title" },
-        h("strong", {}, group.name),
-        h("span", { class: "muted" }, `${group.member_count} member${group.member_count === 1 ? "" : "s"}`)),
-      h("button", { class: "icon-btn info-toggle", type: "button", "aria-label": "Group info", onClick: () => layout.classList.toggle("info-open") }, icon("info")));
-  }
-
+  const infoToggle = h("button", { class: "icon-btn info-toggle", type: "button", "aria-label": "Group info",
+    onClick: () => layout.classList.toggle("info-open") }, icon("info"));
+  const memberText = () => `${group.member_count} member${group.member_count === 1 ? "" : "s"}`;
   const pane = createChatPane({
-    me: state.me, header,
-    getUser: (username) => people.get(username) || { display_name: username },
-    load: (after) => get(`${base}/messages?after=${after}`),
-    send: (text) => post(`${base}/messages`, { text }),
-    onSent: onChanged,
+    me: state.me, chat: { type: "group", key: id }, title: group.name, subtitle: memberText(), avatarEntity: group,
+    backHref: "#/groups", extraButtons: [infoToggle], config: state.config, onActivity: onChanged,
   });
   layout = h("div", { class: "group-layout" }, pane.root, aside);
   main.append(layout);
@@ -149,7 +134,8 @@ export async function renderGroupChat({ main, id, state, onChanged }) {
         avatar(group, "lg"),
         h("h2", {}, group.name),
         group.description ? h("p", { class: "muted" }, group.description) : null,
-        h("span", { class: "tag" }, group.join_mode === "open" ? "Open group" : "Invite-only")),
+        h("span", { class: "tag" }, group.join_mode === "open" ? "Open group" : "Invite-only"),
+        h("p", { class: "muted privacy-note" }, "Server admins can read this group's messages if there is a problem.")),
       isAdmin() ? h("button", { class: "btn small block", type: "button", onClick: openEditDialog }, "Edit group") : null,
       h("h3", { class: "section-title" }, `Members (${group.member_count})`),
       h("ul", { class: "members" }, group.members.map(memberRow)),
@@ -168,13 +154,11 @@ export async function renderGroupChat({ main, id, state, onChanged }) {
       }
       return;
     }
-    indexPeople();
-    fillHeader();
+    pane.updateHeader({ title: group.name, subtitle: memberText(), avatarEntity: group });
     renderInfo();
     onChanged();
   }
 
-  fillHeader();
   renderInfo();
   pane.focus();
   const timer = setInterval(refresh, 10000);

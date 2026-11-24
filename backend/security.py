@@ -63,6 +63,24 @@ def clean_text(value, field, max_len, required=True):
     return value
 
 
+BACKGROUND_RE = re.compile(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
+
+
+def clean_background(value, presets):
+    """'' (none), 'preset:<name>' or a small image as data URL."""
+    if not value:
+        return ""
+    if not isinstance(value, str):
+        raise ApiError("Invalid background.")
+    if value.startswith("preset:"):
+        if value[7:] not in presets:
+            raise ApiError("Unknown background.")
+        return value
+    if len(value) > 450_000 or not BACKGROUND_RE.match(value):
+        raise ApiError("Background must be a PNG, JPEG or WebP image under about 300 KB.")
+    return value
+
+
 def clean_avatar(value):
     if not value:
         return ""
@@ -99,12 +117,31 @@ def find_user(users, username):
     return users.get(str(username or "").lower())
 
 
+ROLES = ("user", "moderator", "admin")
+
+
+def role_of(u):
+    """'user', 'moderator' or 'admin'. Older accounts only have the is_admin flag."""
+    role = u.get("role")
+    if role in ROLES:
+        return role
+    return "admin" if u.get("is_admin") else "user"
+
+
+def is_super_admin(u):
+    """The account named in ADMIN_USERNAME. It can never be demoted, suspended or deleted."""
+    return u["username"].lower() == config.ADMIN_USERNAME.lower()
+
+
 def public_user(u):
-    return {"username": u["username"], "display_name": u["display_name"], "avatar": u.get("avatar", "")}
+    return {"username": u["username"], "display_name": u["display_name"], "avatar": u.get("avatar", ""),
+            "role": role_of(u)}
 
 
 def me_view(u):
-    return {**public_user(u), "email": u["email"], "is_admin": u.get("is_admin", False)}
+    return {**public_user(u), "email": u["email"], "is_admin": role_of(u) == "admin",
+            "must_change_password": bool(u.get("must_change_password")),
+            "muted_until": u.get("muted_until", 0), "prefs": u.get("prefs", {})}
 
 
 # ---------- permissions ----------
@@ -136,10 +173,29 @@ def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         g.user = _user_from_request()
-        if not g.user.get("is_admin"):
+        if role_of(g.user) != "admin":
             raise ApiError("Admins only.", 403)
         return fn(*args, **kwargs)
     return wrapper
+
+
+def moderator_required(fn):
+    """Moderators and admins."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        g.user = _user_from_request()
+        if role_of(g.user) not in ("moderator", "admin"):
+            raise ApiError("Moderators only.", 403)
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def optional_user():
+    """The logged-in user, or None (for pages that work with and without login)."""
+    try:
+        return _user_from_request()
+    except ApiError:
+        return None
 
 
 # ---------- simple rate limit (in memory) ----------

@@ -1,5 +1,5 @@
 // Private chats: list of conversations and people on the left, the open chat on the right.
-import { get, post } from "../api.js";
+import { get } from "../api.js";
 import { createChatPane } from "../chatpane.js";
 import { avatar, debounce, emptyState, formatTime, h, icon, listItem } from "../ui.js";
 
@@ -64,16 +64,10 @@ export async function render({ list, main, arg, state }) {
   if (arg) {
     try {
       const other = await get("/api/users/" + encodeURIComponent(arg));
-      const base = "/api/messages/" + encodeURIComponent(other.username);
-      const header = h("header", { class: "chat-head" },
-        h("a", { class: "icon-btn back", href: "#/chats", "aria-label": "Back to chats" }, icon("back")),
-        avatar(other),
-        h("div", { class: "chat-title" }, h("strong", {}, other.display_name), h("span", { class: "muted" }, "@" + other.username)));
       pane = createChatPane({
-        me: state.me, header,
-        load: (after) => get(`${base}?after=${after}`),
-        send: (text) => post(base, { text }),
-        onSent: loadList,
+        me: state.me, chat: { type: "dm", key: other.username },
+        title: other.display_name, subtitle: "@" + other.username, avatarEntity: other,
+        backHref: "#/chats", config: state.config, onActivity: loadList,
       });
       main.append(pane.root);
       pane.focus();

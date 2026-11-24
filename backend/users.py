@@ -39,6 +39,7 @@ def change_password():
             raise ApiError("Your current password is wrong.", 403)
         user["password_hash"] = hash_password(new_password)
         user["token_version"] += 1          # logs out all other devices
+        user["must_change_password"] = False
     return jsonify({"message": "Password changed. Please log in again."})
 
 
