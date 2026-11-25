@@ -32,6 +32,7 @@ export async function render({ list, main, arg, state }) {
             subtitle: (c.last.from === state.me.username ? "You: " : "") + c.last.text,
             time: formatTime(c.last.ts), href: `#/chats/${encodeURIComponent(c.user.username)}`,
             active: arg && arg.toLowerCase() === c.user.username.toLowerCase(),
+            unread: state.unread.dm?.[c.user.username.toLowerCase()] || state.unread.dm?.[c.user.username] || 0,
           }));
         }
       }
@@ -59,6 +60,8 @@ export async function render({ list, main, arg, state }) {
   search.addEventListener("input", debounce(loadList, 250));
   loadList();
   const listTimer = setInterval(loadList, 8000);
+  const onUnread = () => loadList();
+  window.addEventListener("chatisfying:unread", onUnread);
   let pane = null;
 
   if (arg) {
@@ -79,5 +82,5 @@ export async function render({ list, main, arg, state }) {
     main.append(emptyState("Pick someone to talk to", "Choose a person on the left to start a conversation."));
   }
 
-  return () => { destroyed = true; clearInterval(listTimer); if (pane) pane.destroy(); };
+  return () => { destroyed = true; clearInterval(listTimer); window.removeEventListener("chatisfying:unread", onUnread); if (pane) pane.destroy(); };
 }

@@ -1,0 +1,14 @@
+{
+  "name": "Chatisfying",
+  "short_name": "Chatisfying",
+  "description": "Chatisfying · klartext",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e8a96",
+  "theme_color": "#0e8a96",
+  "icons": [
+    { "src": "assets/images/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "assets/images/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

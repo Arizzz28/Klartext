@@ -31,6 +31,7 @@ DEFAULTS = {
     "invitations": [],
     "verification": {},     # key: lowercase username
     "settings": {},         # global settings changed by admins (see appsettings.py)
+    "ranks": {},            # key: rank id (see perms.py)
 }
 
 # =====================================================================================

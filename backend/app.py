@@ -13,14 +13,24 @@ import storage
 from security import ApiError
 
 import admin
+import ai
 import auth
 import chat_service
 import db
+import economy
+import extras
+import games
 import groups
 import invitations
 import messages
 import moderation
+import notes
+import notify
+import offers
+import perms
+import planner
 import settings
+import social
 import uploads
 import users
 
@@ -36,9 +46,16 @@ def create_app():
     CORS(app, origins=config.ALLOWED_ORIGINS, allow_headers=["Content-Type", "Authorization"])
     storage.ensure_files()
     db.init()
+    # Version 3 start-up steps. All of them are safe to run again and again (they only fill in what is missing).
+    perms.ensure_defaults()
+    perms.migrate_users()
     chat_service.migrate_legacy()
+    notify.init_read_state()
+    economy.seed_missions()
+    extras.seed_release()
 
-    for module in (auth, users, messages, groups, invitations, admin, moderation, settings, uploads):
+    for module in (auth, users, messages, groups, invitations, admin, moderation, settings, uploads, notify, economy,
+                   offers, notes, planner, social, games, extras, ai):
         app.register_blueprint(module.bp)
 
     # DEBUG ONLY: logs every request (method + path, never headers, bodies or query strings).
@@ -49,7 +66,10 @@ def create_app():
     @app.errorhandler(ApiError)
     def handle_api_error(err):
         print(f"[ERROR] {request.path} -> {err.status} {err.message}", flush=True)
-        return jsonify({"error": err.message}), err.status
+        body = {"error": err.message}
+        if err.code:
+            body["code"] = err.code
+        return jsonify(body), err.status
 
     @app.errorhandler(404)
     def not_found(_):

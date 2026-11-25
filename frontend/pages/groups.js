@@ -10,7 +10,7 @@ export async function render({ list, main, arg, state }) {
   list.append(
     h("header", { class: "pane-head" },
       h("h1", {}, "Groups"),
-      h("button", { class: "btn small", type: "button", onClick: openCreateDialog }, icon("plus"), "New group")),
+      state.can("groups.create") ? h("button", { class: "btn small", type: "button", onClick: openCreateDialog }, icon("plus"), "New group") : null),
     body);
 
   let destroyed = false;
@@ -42,6 +42,7 @@ export async function render({ list, main, arg, state }) {
             entity: gr, title: gr.name,
             subtitle: gr.last ? gr.last.text : `${gr.member_count} member${gr.member_count === 1 ? "" : "s"}`,
             time: gr.last ? formatTime(gr.last.ts) : "", href: `#/groups/${gr.id}`, active: arg === gr.id,
+            unread: state.unread.group?.[gr.id] || 0,
           }));
         }
       } else {

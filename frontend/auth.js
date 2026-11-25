@@ -14,7 +14,13 @@ export async function logout() {
   location.href = "login.html";
 }
 
-export const registerStart = (username, email) => post("/api/auth/register/start", { username, email });
+// The versions of the legal texts come from the server, so the consent is stored for exactly the texts that were shown.
+export async function registerStart(username, email, accepted) {
+  const legal = await get("/api/legal");
+  return post("/api/auth/register/start", {
+    username, email, accept_terms: accepted === true, terms_version: legal.terms_version, privacy_version: legal.privacy_version,
+  });
+}
 export const registerVerify = (username, code) => post("/api/auth/register/verify", { username, code });
 export const registerComplete = (username, password) => post("/api/auth/register/complete", { username, password });
 
@@ -76,16 +82,24 @@ function initLoginPage() {
       const u = field("Username", { type: "text", autocomplete: "username", required: true, minlength: "3", maxlength: "20", value: reg.username });
       const m = field("Email", { type: "email", autocomplete: "email", required: true, value: reg.email });
       const btn = h("button", { class: "btn primary block", type: "submit" }, "Send code");
+      // One checkbox, NOT preselected. The two texts open in a new tab so nothing typed here is lost.
+      const accept = h("input", { type: "checkbox", id: "accept-terms" });
+      const consent = h("div", { class: "consent-box" },
+        h("label", { class: "choice", for: "accept-terms" }, accept, h("span", {}, h("strong", {}, "Ich akzeptiere die Nutzungsbedingungen"))),
+        h("p", { class: "hint" }, "Bitte lies vorher die ",
+          h("a", { href: "terms.html", target: "_blank", rel: "noopener" }, "Nutzungsbedingungen"), " und die ",
+          h("a", { href: "privacy.html", target: "_blank", rel: "noopener" }, "Datenschutzerklärung"), "."));
       return h("form", {
         onSubmit: (e) => {
           e.preventDefault();
           run(btn, msg, async () => {
+            if (!accept.checked) throw new Error("Ohne Zustimmung zu den Nutzungsbedingungen kannst du kein Konto erstellen.");
             reg.username = u.input.value.trim(); reg.email = m.input.value.trim();
-            await registerStart(reg.username, reg.email);
+            await registerStart(reg.username, reg.email, accept.checked);
             step = "code"; draw();
           });
         },
-      }, h("p", { class: "hint" }, "Your username has to be on the whitelist. Ask an admin if it isn't."), u.row, m.row, msg, btn);
+      }, h("p", { class: "hint" }, "Your username has to be on the whitelist. Ask an admin if it isn't."), u.row, m.row, consent, msg, btn);
     }
     if (step === "code") {
       const c = field("6-digit code", { type: "text", inputmode: "numeric", autocomplete: "one-time-code", required: true, maxlength: "6", pattern: "[0-9]{6}" });

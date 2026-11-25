@@ -8,7 +8,7 @@ from flask import Blueprint, g, jsonify, request
 import appsettings
 import chat_service
 import db
-from security import ApiError, clean_background, json_body, login_required
+from security import ApiError, clean_background, json_body, login_required, perm_required
 
 bp = Blueprint("messages", __name__, url_prefix="/api")
 
@@ -35,7 +35,7 @@ def list_messages(chat_type, key):
 
 
 @bp.post("/chats/<chat_type>/<key>/messages")
-@login_required
+@perm_required("chat.write")
 def send_message(chat_type, key):
     data = json_body()
     chat = _chat(chat_type, key)
@@ -95,7 +95,7 @@ def put_chat_settings(chat_type, key):
 
 # ---------- single messages ----------
 @bp.patch("/messages/<int:mid>")
-@login_required
+@perm_required("chat.write")
 def edit_message(mid):
     return jsonify(chat_service.edit(mid, g.user, json_body().get("text")))
 
@@ -108,7 +108,7 @@ def delete_message(mid):
 
 
 @bp.put("/messages/<int:mid>/reactions/<emoji>")
-@login_required
+@perm_required("chat.react")
 def add_reaction(mid, emoji):
     return jsonify(chat_service.react(mid, g.user, emoji, True))
 
@@ -120,7 +120,7 @@ def remove_reaction(mid, emoji):
 
 
 @bp.post("/messages/<int:mid>/report")
-@login_required
+@perm_required("chat.report")
 def report_message(mid):
     chat_service.report(mid, g.user, json_body().get("reason", ""))
     return jsonify({"message": "Thanks, the moderators will have a look."}), 201

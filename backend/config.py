@@ -29,6 +29,9 @@ def _load_secret_key() -> str:
 SECRET_KEY = _load_secret_key()
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin").strip()
+# The Owner is the top instance: all permissions, cannot be demoted, suspended or deleted.
+# If OWNER_USERNAME is empty, ADMIN_USERNAME is used (so old setups keep working).
+OWNER_USERNAME = os.environ.get("OWNER_USERNAME", "").strip() or ADMIN_USERNAME
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if o.strip()]
 
@@ -58,3 +61,16 @@ S3_SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY", "").strip()
 UPLOAD_URL_TTL = 3 * 3600        # a prepared upload link works for 3 hours (big files need time)
 DOWNLOAD_URL_TTL = 6 * 3600      # a download link works for 6 hours
 HARD_MAX_UPLOAD_MB = 200         # nobody (not even an admin setting) can go above this
+
+# Verification codes are only written to the log if you switch this on (debugging). Default: off,
+# because everybody with access to the server log could otherwise read login codes.
+DEBUG_LOG_CODES = os.environ.get("DEBUG_LOG_CODES", "").strip().lower() in ("1", "true", "yes")
+
+# Google Gemini (AI tab). The key only ever lives here on the server, never in the frontend.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
+
+# Web push (VAPID). Create the pair with:  python gen_vapid.py
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "").strip() or "mailto:" + (BREVO_SENDER or "owner@example.com")

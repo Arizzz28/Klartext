@@ -15,10 +15,11 @@ import storage
 
 
 class ApiError(Exception):
-    def __init__(self, message, status=400):
+    def __init__(self, message, status=400, code=None):
         super().__init__(message)
         self.message = message
         self.status = status
+        self.code = code            # machine-readable reason, e.g. "consent_required"
 
 
 # ---------- validation ----------
@@ -117,31 +118,33 @@ def find_user(users, username):
     return users.get(str(username or "").lower())
 
 
-ROLES = ("user", "moderator", "admin")
-
-
-def role_of(u):
-    """'user', 'moderator' or 'admin'. Older accounts only have the is_admin flag."""
-    role = u.get("role")
-    if role in ROLES:
-        return role
-    return "admin" if u.get("is_admin") else "user"
-
-
 def is_super_admin(u):
-    """The account named in ADMIN_USERNAME. It can never be demoted, suspended or deleted."""
-    return u["username"].lower() == config.ADMIN_USERNAME.lower()
+    """The Owner account (OWNER_USERNAME). It can never be demoted, suspended or deleted."""
+    return u["username"].lower() == config.OWNER_USERNAME.lower()
 
 
-def public_user(u):
+def public_user(u, ranks=None):
+    import perms
+    rank = perms.rank_of(u, ranks)
     return {"username": u["username"], "display_name": u["display_name"], "avatar": u.get("avatar", ""),
-            "role": role_of(u)}
+            "rank": perms.rank_public(rank)}
 
 
 def me_view(u):
-    return {**public_user(u), "email": u["email"], "is_admin": role_of(u) == "admin",
+    import legalconf
+    import perms
+    ranks = perms.all_ranks()
+    rank = perms.rank_of(u, ranks)
+    lease = perms.lease_of(u, ranks)
+    return {**public_user(u, ranks), "email": u["email"], "is_owner": is_super_admin(u),
             "must_change_password": bool(u.get("must_change_password")),
-            "muted_until": u.get("muted_until", 0), "prefs": u.get("prefs", {})}
+            "muted_until": u.get("muted_until", 0), "prefs": u.get("prefs", {}),
+            "perms": sorted(perms.effective_perms(u, ranks)),
+            "consent_ok": legalconf.consent_ok(u), "terms_version": legalconf.TERMS_VERSION,
+            "privacy_version": legalconf.PRIVACY_VERSION,
+            "lease": {"rank": perms.rank_public(lease), "until": u["lease"]["until"]} if lease else None,
+            "allowed_designs": perms.allowed_designs(u, ranks), "design": perms.effective_design(u),
+            "rank_level": rank["level"]}
 
 
 # ---------- permissions ----------
@@ -161,33 +164,45 @@ def _user_from_request():
     return user
 
 
+# Paths that work even before the Terms are accepted (the person has to be able to read and accept them).
+CONSENT_EXEMPT = {("GET", "/api/me"), ("POST", "/api/me/consent"), ("GET", "/api/legal"),
+                  ("GET", "/api/config"), ("GET", "/api/loading"), ("POST", "/api/auth/logout")}
+
+
+def _checked_user():
+    """Logged-in user, and the Terms must be accepted in their current version (checked on the server)."""
+    import legalconf
+    user = _user_from_request()
+    if not legalconf.consent_ok(user) and (request.method, request.path.rstrip("/")) not in CONSENT_EXEMPT:
+        raise ApiError("Please accept the Terms of Service and the Privacy Policy first.", 403, "consent_required")
+    return user
+
+
 def login_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        g.user = _user_from_request()
+        g.user = _checked_user()
         return fn(*args, **kwargs)
     return wrapper
 
 
-def admin_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        g.user = _user_from_request()
-        if role_of(g.user) != "admin":
-            raise ApiError("Admins only.", 403)
-        return fn(*args, **kwargs)
-    return wrapper
+def need(user, key):
+    """Raises 403 unless the user's rank (or extra permission) includes `key`."""
+    import perms
+    if not perms.has_perm(user, key):
+        raise ApiError("Your rank doesn't include this feature.", 403, "permission_denied")
 
 
-def moderator_required(fn):
-    """Moderators and admins."""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        g.user = _user_from_request()
-        if role_of(g.user) not in ("moderator", "admin"):
-            raise ApiError("Moderators only.", 403)
-        return fn(*args, **kwargs)
-    return wrapper
+def perm_required(key):
+    """Decorator: login + the Terms accepted + the given permission."""
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            g.user = _checked_user()
+            need(g.user, key)
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def optional_user():

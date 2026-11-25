@@ -7,7 +7,7 @@ from flask import Blueprint, g, jsonify, request
 import chat_service
 import storage
 from security import (ApiError, clean_avatar, clean_text, find_user, json_body, login_required,
-                      public_user)
+                      perm_required, public_user)
 
 bp = Blueprint("groups", __name__, url_prefix="/api/groups")
 
@@ -64,7 +64,7 @@ def discover():
 
 
 @bp.post("")
-@login_required
+@perm_required("groups.create")
 def create_group():
     data = json_body()
     name = clean_text(data.get("name"), "Group name", 40)

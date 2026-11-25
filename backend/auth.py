@@ -9,7 +9,10 @@ from flask import Blueprint, g, jsonify, request
 
 import appsettings
 import config
+import db
+import legalconf
 import mailer
+import perms
 import storage
 from security import (
     ApiError,
@@ -33,7 +36,7 @@ bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 def _is_allowed(username, whitelist):
     name = username.lower()
-    return name == config.ADMIN_USERNAME.lower() or name in whitelist
+    return name in (config.ADMIN_USERNAME.lower(), config.OWNER_USERNAME.lower()) or name in whitelist
 
 
 @bp.post("/register/start")
@@ -43,6 +46,11 @@ def register_start():
     data = json_body()
     username = valid_username(data.get("username"))
     email = valid_email(data.get("email"))
+    # The checkbox is checked on the SERVER too (not only in the browser), and the version is stored.
+    if data.get("accept_terms") is not True:
+        raise ApiError("Please accept the Terms of Service and the Privacy Policy to create an account.")
+    if data.get("terms_version") != legalconf.TERMS_VERSION or data.get("privacy_version") != legalconf.PRIVACY_VERSION:
+        raise ApiError("The legal texts were updated. Please reload the page and read them again.", 409)
 
     print("[AUTH] Validation successful", flush=True)
 
@@ -60,7 +68,7 @@ def register_start():
 
         # Registration mode is set by the admins: whitelist | open_approval | closed
         mode = appsettings.get()["registration_mode"]
-        is_main_admin = key == config.ADMIN_USERNAME.lower()
+        is_main_admin = key in (config.ADMIN_USERNAME.lower(), config.OWNER_USERNAME.lower())
         if mode == "closed" and not is_main_admin:
             raise ApiError("Registration is closed at the moment.", 403)
         if mode == "whitelist" and not _is_allowed(username, db["whitelist"]):
@@ -86,6 +94,7 @@ def register_start():
             "expires": now + config.CODE_TTL,
             "attempts": 0,
             "verified": False,
+            "consent": legalconf.consent_record(),
         }
 
     print("[AUTH] Verification code saved", flush=True)
@@ -153,9 +162,9 @@ def register_complete():
     key = username.lower()
     now = time.time()
 
-    is_admin = key == config.ADMIN_USERNAME.lower()
+    is_admin = key == config.OWNER_USERNAME.lower()
 
-    with storage.transaction("users", "verification") as db:
+    with storage.transaction("users", "verification", "ranks") as db:
         rec = db["verification"].get(key)
 
         if not rec or not rec["verified"] or rec["expires"] < now:
@@ -170,8 +179,8 @@ def register_complete():
             "password_hash": hash_password(password),
             "display_name": username,
             "avatar": "",
-            "is_admin": is_admin,
-            "role": "admin" if is_admin else "user",
+            "rank": perms.owner_rank_id(db["ranks"]) if is_admin else perms.default_rank_id(),
+            "consent": rec.get("consent") or legalconf.consent_record(),
             "status": "active" if is_admin else "pending",
             "token_version": 0,
             "created": now,
@@ -212,6 +221,8 @@ def login():
     )
 
     if not user or not ok:
+        if user:
+            db.execute("INSERT INTO login_log (username, ts, ok) VALUES (?, ?, 0)", (user["username"], time.time()))
         raise ApiError("Wrong username or password.", 401)
 
     if user["status"] == "pending":
@@ -223,6 +234,7 @@ def login():
     if user["status"] != "active":
         raise ApiError("This account has been suspended.", 403)
 
+    db.execute("INSERT INTO login_log (username, ts, ok) VALUES (?, ?, 1)", (user["username"], time.time()))
     return jsonify({
         "token": create_token(user),
         "user": me_view(user)

@@ -16,7 +16,9 @@ import config
 import db
 import objstore
 import storage
-from security import ApiError, clean_text, find_user, rate_limit, role_of
+import notify
+import perms
+from security import ApiError, clean_text, find_user, rate_limit
 
 MAX_ATTACHMENTS = 10
 MAX_REACTION_KINDS = 12
@@ -59,7 +61,7 @@ def is_member(chat_type, chat_key, username):
 
 def can_moderate(user, chat):
     """May this user delete other people's messages / clear this chat for everybody?"""
-    if role_of(user) in ("moderator", "admin"):
+    if perms.has_perm(user, "chat.moderate"):
         return True
     return chat["type"] == "group" and chat["group"]["members"].get(user["username"]) == "admin"
 
@@ -158,7 +160,9 @@ def post(chat, user, text, reply_to=None, attachment_ids=()):
                 (new_id, att_id, user["username"], chat["type"], chat["key"]))
             if n != 1:
                 raise ApiError("One of the files is not available. Please upload it again.", 400)
-    return _one(new_id, user)
+    result = _one(new_id, user)
+    notify.on_message(chat, user, text, bool(attachment_ids))
+    return result
 
 
 def _message_row(message_id):
@@ -184,7 +188,7 @@ def edit(message_id, user, text):
 
 def delete(message_id, user):
     row = _message_row(message_id)
-    if role_of(user) not in ("moderator", "admin"):
+    if not perms.has_perm(user, "chat.moderate"):
         _need_access(row, user)
     if row["is_system"]:
         raise ApiError("System messages cannot be deleted.", 403)
@@ -195,7 +199,7 @@ def delete(message_id, user):
             group_admin = bool(group and group["members"].get(user["username"]) == "admin")
         else:
             group_admin = False
-        if not (group_admin or role_of(user) in ("moderator", "admin")):
+        if not (group_admin or perms.has_perm(user, "chat.moderate")):
             raise ApiError("You can't delete this message.", 403)
     keys = [a["storage_key"] for a in db.query("SELECT storage_key FROM attachments WHERE message_id = ?", (message_id,))]
     with db.transaction() as tx:
@@ -303,6 +307,37 @@ def purge_user(username, delete_group_messages):
     db.execute("DELETE FROM chat_clears WHERE username = ?", (username,))
     db.execute("DELETE FROM chat_settings WHERE username = ?", (username,))
     objstore.delete(keys)
+    purge_v3_data(username)
+
+
+# Version 3 tables: (table, column that holds the username). Deleted when an account is deleted.
+V3_PERSONAL = [
+    ("notifications", "username"), ("read_state", "username"), ("notes", "username"), ("event_shares", "username"),
+    ("task_shares", "username"), ("forum_votes", "username"), ("release_seen", "username"), ("login_log", "username"),
+    ("ai_usage", "username"), ("wallets", "username"), ("coin_log", "username"), ("mission_claims", "username"),
+    ("push_subscriptions", "username"), ("custom_tabs", "username"), ("game_scores", "username"), ("offers", "username"),
+    ("perm_requests", "from_user"), ("profile_visits", "visitor"), ("profile_visits", "visited"),
+    ("forum_comments", "author"), ("playlist_tracks", "added_by"),
+]
+
+
+def purge_v3_data(username):
+    """Removes everything the newer features stored about this person (notes, tasks, calendar, coins, push, forum, ...)."""
+    for table, column in V3_PERSONAL:
+        db.execute(f"DELETE FROM {table} WHERE {column} = ?", (username,))
+    for eid in [r["id"] for r in db.query("SELECT id FROM events WHERE owner = ?", (username,))]:
+        db.execute("DELETE FROM event_shares WHERE event_id = ?", (eid,))
+    db.execute("DELETE FROM events WHERE owner = ?", (username,))
+    for tid in [r["id"] for r in db.query("SELECT id FROM tasks WHERE owner = ?", (username,))]:
+        db.execute("DELETE FROM task_shares WHERE task_id = ?", (tid,))
+    db.execute("DELETE FROM tasks WHERE owner = ?", (username,))
+    for pid in [r["id"] for r in db.query("SELECT id FROM playlists WHERE owner = ?", (username,))]:
+        db.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (pid,))
+    db.execute("DELETE FROM playlists WHERE owner = ?", (username,))
+    for post in [r["id"] for r in db.query("SELECT id FROM forum_posts WHERE author = ?", (username,))]:
+        db.execute("DELETE FROM forum_comments WHERE post_id = ?", (post,))
+        db.execute("DELETE FROM forum_votes WHERE post_id = ?", (post,))
+    db.execute("DELETE FROM forum_posts WHERE author = ?", (username,))
 
 
 # ---------------------------------------------------------------- lists
@@ -324,7 +359,8 @@ def conversations(me):
             continue
         text = "Message deleted" if r["deleted"] else (r["body"] or "Attachment")
         out.append({"user": {"username": partner["username"], "display_name": partner["display_name"],
-                             "avatar": partner.get("avatar", ""), "role": role_of(partner)},
+                             "avatar": partner.get("avatar", ""),
+                             "rank": perms.rank_public(perms.rank_of(partner))},
                     "last": {"text": text, "ts": r["created"], "from": r["sender"]}})
     out.sort(key=lambda c: c["last"]["ts"], reverse=True)
     return out

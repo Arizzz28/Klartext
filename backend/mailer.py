@@ -66,9 +66,10 @@ def _send_with_smtp(to_address, code):
 
 
 def send_verification_code(to_address, code):
-    # DEBUG PHASE ONLY: the code is ALWAYS printed, before anything can fail.
-    # Remove this print before real production use, otherwise everyone with log access can read codes!
-    print(f"[MAILER] Verification code: {code}", flush=True)
+    # The code only goes into the log if DEBUG_LOG_CODES=1 is set (for testing without a mail provider).
+    # Leave it off normally: everybody with access to the server log could otherwise read login codes.
+    if config.DEBUG_LOG_CODES:
+        print(f"[MAILER] Verification code: {code}", flush=True)
 
     try:
         if config.BREVO_API_KEY and config.BREVO_SENDER:

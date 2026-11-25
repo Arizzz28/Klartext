@@ -1,12 +1,88 @@
 // Settings: theme, password, log out.
 import { get, post, put } from "../api.js";
 import { logout } from "../auth.js";
+import { disablePush, enablePush, pushState } from "../push.js";
+import { openTabEditor } from "../tabeditor.js";
 import { THEME_KEY, applyTheme, h, toast } from "../ui.js";
 import { uploadFile } from "../upload.js";
 
+const DESIGN_TEXT = { classic: "Classic", glass: "Glass (translucent)", paper: "Paper (calm, light)", midnight: "Midnight (dark blue)", neon: "Neon (bright accents)" };
+const PUSH_TEXT = {
+  on: "Push messages are on for this device.", off: "Push messages are off on this device.",
+  denied: "Notifications are blocked in your device settings.", unsupported: "This browser can't receive push messages.",
+  "needs-home-screen": "On an iPad or iPhone this only works after you add Chatisfying to the Home Screen (Share button → “Add to Home Screen”) and open it from there.",
+};
+
+// Saves a preference and redraws the app (design, tabs, bubble, layout).
+async function savePrefs(state, changes) {
+  try { state.me = await put("/api/me/prefs", changes); state.onMeChanged?.(); return true; }
+  catch (e) { toast(e.message, "error"); return false; }
+}
+
+function designCard(state) {
+  if (!state.can("design.change")) return null;
+  const current = state.me.design;
+  return h("section", { class: "card" }, h("h2", {}, "Design mode"),
+    h("p", { class: "muted" }, "Which designs you can use depends on your rank."),
+    h("fieldset", { class: "choices" }, h("legend", { class: "sr-only" }, "Design"),
+      ...state.me.allowed_designs.map((d) => h("label", { class: "choice" },
+        h("input", { type: "radio", name: "design", value: d, checked: current === d, onChange: () => savePrefs(state, { design: d }) }),
+        h("span", {}, h("strong", {}, DESIGN_TEXT[d] || d))))));
+}
+
+function layoutCard(state) {
+  const canMove = state.can("layout.move"), canTabs = state.can("tabs.editor"), canBubble = state.can("tabs.bubble");
+  if (!canMove && !canTabs && !canBubble) return null;
+  const lay = { side: "left", list_side: "inner", list_width: 330, rail: true, ...(state.me.prefs?.layout || {}) };
+  const row = [];
+  if (canMove) {
+    const sel = (label, key, options) => h("label", { class: "field" }, h("span", { class: "field-label" }, label),
+      h("select", { class: "input", onChange: (e) => savePrefs(state, { layout: { ...lay, [key]: e.target.value === "true" ? true : e.target.value === "false" ? false : e.target.value } }) },
+        options.map(([v, l]) => h("option", { value: String(v), selected: lay[key] === v }, l))));
+    row.push(sel("Navigation bar", "side", [["left", "Left"], ["right", "Right"]]),
+      sel("Chat list", "list_side", [["inner", "Next to the navigation"], ["outer", "On the other side of the chat"]]),
+      sel("Navigation style", "rail", [[true, "Icons only (more room)"], [false, "Icons with names"]]),
+      h("p", { class: "hint" }, "You can also drag the edge of the chat list to change its width."));
+  }
+  if (canTabs) row.push(h("button", { class: "btn", type: "button", onClick: () => openTabEditor(state) }, "Choose and sort my tabs…"));
+  if (canBubble) {
+    const on = state.me.prefs?.bubble?.on !== false;
+    const box = h("input", { type: "checkbox", checked: on, onChange: () => savePrefs(state, { bubble: { on: box.checked, pos: state.me.prefs?.bubble?.pos || { x: 0.9, y: 0.8 } } }) });
+    row.push(h("label", { class: "choice" }, box, h("span", {}, h("strong", {}, "Floating tab bubble"), h("small", {}, "A movable round button that opens all your tabs."))));
+  }
+  return h("section", { class: "card" }, h("h2", {}, "Layout and tabs"), ...row);
+}
+
+async function pushCard(state) {
+  if (!state.can("push.use")) return null;
+  const text = h("p", { class: "muted" });
+  const btn = h("button", { class: "btn", type: "button" });
+  const preview = h("input", { type: "checkbox", checked: Boolean(state.me.prefs?.push_preview), onChange: () => savePrefs(state, { push_preview: preview.checked }) });
+  async function draw() {
+    const st = await pushState();
+    text.textContent = PUSH_TEXT[st] || "";
+    btn.hidden = !["on", "off"].includes(st);
+    btn.textContent = st === "on" ? "Turn push messages off" : "Turn push messages on";
+    btn.onclick = async () => {
+      try { if (st === "on") await disablePush(); else await enablePush(); } catch (e) { toast(e.message, "error"); }
+      draw();
+    };
+  }
+  await draw();
+  return h("section", { class: "card" }, h("h2", {}, "Push notifications"), text, btn,
+    h("label", { class: "choice" }, preview, h("span", {}, h("strong", {}, "Show the message text in the push message"),
+      h("small", {}, "Off by default: the push message then only says who wrote. Text passes through the push service of your browser/device maker when this is on."))));
+}
+
+function legalCard() {
+  const link = (href, label) => h("li", {}, h("a", { href, target: "_blank", rel: "noopener" }, label));
+  return h("section", { class: "card" }, h("h2", {}, "Rechtliches"),
+    h("ul", { class: "plain-list" }, link("terms.html", "Nutzungsbedingungen"), link("privacy.html", "Datenschutzerklärung"), link("imprint.html", "Impressum / Anbieterangaben")));
+}
+
 export const usesList = false;
 
-export async function render({ main }) {
+export async function render({ main, state }) {
   const current = localStorage.getItem(THEME_KEY) || "system";
   const themeOption = (value, label) => h("label", { class: "choice" },
     h("input", {
@@ -46,14 +122,18 @@ export async function render({ main }) {
     h("label", { class: "field" }, h("span", { class: "field-label" }, "Repeat new password"), again),
     msg, submit);
 
+  const [layoutC, designC, pushC] = [layoutCard(state), designCard(state), await pushCard(state)];
   main.append(h("div", { class: "page" },
     h("h1", {}, "Settings"),
+    designC,
     h("section", { class: "card" },
       h("h2", {}, "Appearance"),
       h("fieldset", { class: "choices" }, h("legend", { class: "sr-only" }, "Theme"),
         themeOption("system", "Match my device"), themeOption("light", "Light"), themeOption("dark", "Dark"))),
+    layoutC, pushC,
     loadingCard,
     h("section", { class: "card" }, h("h2", {}, "Password"), form),
+    legalCard(),
     h("section", { class: "card" }, h("h2", {}, "Session"),
       h("button", { class: "btn", type: "button", onClick: logout }, "Log out"))));
 }

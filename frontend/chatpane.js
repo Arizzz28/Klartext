@@ -101,6 +101,15 @@ export function createChatPane({ me, chat, title, subtitle = "", avatarEntity, b
     first = false;
   }
 
+  // Tell the server what you have seen, so the unread counters are right on every device.
+  let lastReadId = 0;
+  function markRead(list) {
+    const newest = list.length ? Math.max(...list.map((m) => m.id)) : 0;
+    if (!newest || newest <= lastReadId || document.hidden) return;
+    lastReadId = newest;
+    post(`${base}/read`).then(() => window.dispatchEvent(new CustomEvent("chatisfying:read"))).catch(() => { lastReadId = 0; });
+  }
+
   async function poll() {
     if (busy || document.hidden) return;
     busy = true;
@@ -110,6 +119,7 @@ export function createChatPane({ me, chat, title, subtitle = "", avatarEntity, b
       windowFull = res.has_more;
       applyWindow(res.messages);
       olderBtn.hidden = !(windowFull && !olderDone);
+      markRead(res.messages);
     } catch { /* a short network problem: the next poll tries again */ }
     busy = false;
   }

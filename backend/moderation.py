@@ -7,14 +7,15 @@ from flask import Blueprint, g, jsonify, request
 import audit
 import chat_service
 import db
+import perms
 import storage
-from security import ApiError, find_user, json_body, moderator_required, role_of
+from security import ApiError, find_user, json_body, perm_required
 
 bp = Blueprint("moderation", __name__, url_prefix="/api/mod")
 
 
 @bp.get("/reports")
-@moderator_required
+@perm_required("mod.reports")
 def list_reports():
     status = request.args.get("status", "open")
     rows = db.query("SELECT * FROM reports WHERE status = ? ORDER BY id DESC LIMIT 100", ("open" if status == "open" else "closed",))
@@ -31,7 +32,7 @@ def list_reports():
 
 
 @bp.post("/reports/<int:rid>/resolve")
-@moderator_required
+@perm_required("mod.reports")
 def resolve_report(rid):
     action = json_body().get("action")
     if action not in ("dismiss", "delete_message"):
@@ -51,7 +52,7 @@ def resolve_report(rid):
 
 
 @bp.post("/users/<username>/mute")
-@moderator_required
+@perm_required("mod.mute")
 def mute(username):
     minutes = json_body().get("minutes")
     if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= 43200:
@@ -60,8 +61,8 @@ def mute(username):
         target = find_user(db_["users"], username)
         if not target:
             raise ApiError("User not found.", 404)
-        if role_of(target) == "admin" or (role_of(target) == "moderator" and role_of(g.user) != "admin"):
-            raise ApiError("You can't mute this person.", 403)
+        if not perms.can_manage(g.user, target):
+            raise ApiError("You can't mute this person (their rank is not below yours).", 403)
         target["muted_until"] = time.time() + minutes * 60 if minutes else 0
     audit.log(g.user["username"], "mute" if minutes else "unmute", target["username"], f"{minutes} min" if minutes else "")
     return jsonify({"message": f"{target['username']} is muted for {minutes} minutes." if minutes else f"{target['username']} can write again."})

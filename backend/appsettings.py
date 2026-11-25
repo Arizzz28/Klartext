@@ -31,7 +31,25 @@ DEFAULTS = {
         "default": "",                      # a preset key such as "ocean", empty = none
         "allow_custom": True,
     },
+    # ---- Version 3: these are decided by the Owner (permission owner.config) ----
+    "default_rank": "basic",                # rank of new accounts
+    "offers": {"enabled": True, "rules": "Offer something you are willing to give or do (for example help, an idea, a favour). "
+                                          "Nothing is paid. Admins read your offer and may reward you with a rank for some time."},
+    "stats": {"enabled": ["users", "messages", "messages_24h", "groups", "files", "open_reports"]},
+    "ai": {"enabled": False, "daily_limit": 20, "max_context_messages": 30},
+    "ads": {"enabled": False, "every_n_visits": 5},
+    "visitors": {"enabled": True, "keep_days": 30},
+    "shop": {"enabled": True, "max_days": 7, "gift_max_days": 7, "items": [
+        {"rank_id": "pro", "price": 200, "days": 1}, {"rank_id": "pro_plus", "price": 500, "days": 1}]},
+    "coins": {"admin_daily_gift_cap": 500, "start_coins": 0},
+    "missions": {"enabled": True},
+    "legal": {"operator_name": "", "operator_address": "", "operator_email": "", "operator_phone": "",
+              "min_age": "", "note": ""},
 }
+
+STAT_KEYS = ("users", "pending", "ranks", "messages", "messages_24h", "groups", "files", "storage_mb", "open_reports",
+             "offers_open", "coins_total", "notes", "tasks", "forum_posts", "logins_24h")
+OWNER_KEYS = ("default_rank", "offers", "stats", "ai", "ads", "visitors", "shop", "coins", "missions", "legal")
 
 # What an admin may send, with limits. (type, min, max) or (type, allowed values).
 _RULES = {
@@ -51,6 +69,18 @@ _LOADING_RULES = {
     "allow_user_mute": (bool,), "max_image_mb": (int, 1, 20), "max_music_mb": (int, 1, 50),
 }
 _BG_RULES = {"default": (str, 40), "allow_custom": (bool,)}
+
+
+_V3_RULES = {
+    "offers": {"enabled": (bool,), "rules": (str, 1000)},
+    "ai": {"enabled": (bool,), "daily_limit": (int, 1, 500), "max_context_messages": (int, 0, 100)},
+    "ads": {"enabled": (bool,), "every_n_visits": (int, 1, 100)},
+    "visitors": {"enabled": (bool,), "keep_days": (int, 1, 365)},
+    "coins": {"admin_daily_gift_cap": (int, 0, 1_000_000), "start_coins": (int, 0, 1_000_000)},
+    "missions": {"enabled": (bool,)},
+    "legal": {"operator_name": (str, 120), "operator_address": (str, 300), "operator_email": (str, 120),
+              "operator_phone": (str, 60), "min_age": (str, 60), "note": (str, 1500)},
+}
 
 
 def _merge(base, extra):
@@ -104,9 +134,54 @@ def validate(changes):
             clean["loading"] = {k: _check(f"loading.{k}", v, _LOADING_RULES[k]) for k, v in value.items() if k in _LOADING_RULES}
         elif key == "background" and isinstance(value, dict):
             clean["background"] = {k: _check(f"background.{k}", v, _BG_RULES[k]) for k, v in value.items() if k in _BG_RULES}
+        elif key in _V3_RULES and isinstance(value, dict):
+            clean[key] = {k: _check(f"{key}.{k}", v, _V3_RULES[key][k]) for k, v in value.items() if k in _V3_RULES[key]}
+        elif key == "default_rank":
+            if not isinstance(value, str) or len(value) > 40:
+                raise ApiError("Invalid rank.")
+            clean[key] = value
+        elif key == "stats" and isinstance(value, dict):
+            enabled = value.get("enabled", [])
+            if not isinstance(enabled, list) or any(e not in STAT_KEYS for e in enabled):
+                raise ApiError("Unknown statistic.")
+            clean["stats"] = {"enabled": [e for e in STAT_KEYS if e in enabled]}
+        elif key == "shop" and isinstance(value, dict):
+            clean["shop"] = _check_shop(value)
         elif key in _RULES:
             clean[key] = _check(key, value, _RULES[key])
     return clean
+
+
+def _check_shop(value):
+    out = {}
+    if "enabled" in value:
+        out["enabled"] = _check("shop.enabled", value["enabled"], (bool,))
+    if "max_days" in value:
+        out["max_days"] = _check("shop.max_days", value["max_days"], (int, 1, 30))
+    if "gift_max_days" in value:
+        out["gift_max_days"] = _check("shop.gift_max_days", value["gift_max_days"], (int, 1, 365))
+    if "items" in value:
+        import perms
+        ranks = perms.all_ranks()
+        items = value["items"]
+        if not isinstance(items, list) or len(items) > 20:
+            raise ApiError("The shop can have up to 20 items.")
+        clean_items, seen = [], set()
+        for item in items:
+            if not isinstance(item, dict):
+                raise ApiError("Invalid shop item.")
+            rid = item.get("rank_id")
+            rank = ranks.get(rid)
+            if not rank or rank.get("is_owner") or rank["level"] >= 60:
+                raise ApiError("Only ranks below the Mod level can be rented.")
+            if rid in seen:
+                raise ApiError("Every rank can be in the shop only once.")
+            seen.add(rid)
+            price = _check("price", item.get("price"), (int, 1, 1_000_000))
+            days = _check("days", item.get("days", 1), (int, 1, 30))
+            clean_items.append({"rank_id": rid, "price": price, "days": days})
+        out["items"] = clean_items
+    return out
 
 
 def save(clean):

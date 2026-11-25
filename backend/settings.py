@@ -5,7 +5,8 @@ import appsettings
 import db
 import objstore
 import storage
-from security import ApiError, json_body, login_required, optional_user, role_of
+import perms
+from security import ApiError, json_body, login_required, optional_user
 
 bp = Blueprint("settings", __name__, url_prefix="/api")
 
@@ -43,9 +44,9 @@ def effective_loading(user):
     image_id, music_id = s["image_asset"], s["music_asset"]
     if user:
         prefs = user.get("prefs", {})
-        if (s["allow_user_image"] or role_of(user) == "admin") and prefs.get("loading_image"):
+        if (s["allow_user_image"] or perms.has_perm(user, "admin.settings")) and prefs.get("loading_image"):
             image_id = prefs["loading_image"]
-        if (s["allow_user_music"] or role_of(user) == "admin") and prefs.get("loading_music"):
+        if (s["allow_user_music"] or perms.has_perm(user, "admin.settings")) and prefs.get("loading_music"):
             music_id = prefs["loading_music"]
         if prefs.get("music_off") and s["allow_user_mute"]:
             music_id = ""
@@ -76,7 +77,7 @@ def loading():
 def update_my_loading():
     data = json_body()
     s = appsettings.get()["loading"]
-    admin = role_of(g.user) == "admin"
+    admin = perms.has_perm(g.user, "admin.settings")
     with storage.transaction("users") as db_:
         user = db_["users"][g.user["username"].lower()]
         prefs = user.setdefault("prefs", {})

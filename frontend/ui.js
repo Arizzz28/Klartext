@@ -38,6 +38,23 @@ const ICONS = {
   more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
   file: '<path d="M7 3h7l5 5v13H7V3Z"/><path d="M14 3v5h5"/>',
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.7"/><path d="m21 16-5-5-9 9"/>',
+  missions: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M9.6 9.6c.4-.9 1.4-1.4 2.4-1.4s2.3.5 2.3 1.7c0 2.2-4.8 1.1-4.8 3.4 0 1.2 1.2 1.7 2.5 1.7s2-.5 2.4-1.4"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  notes: '<path d="M6 3h9l4 4v14H6V3Z"/><path d="M9 11h7M9 15h7M9 7h3"/>',
+  widgets: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+  music: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+  visitors: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
+  games: '<rect x="3" y="7" width="18" height="11" rx="5"/><path d="M8 10.5v4M6 12.5h4M15.5 11h.01M18 14h.01"/>',
+  forum: '<path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8M8 12h5"/>',
+  ai: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM18.5 16l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/>',
+  whatsnew: '<path d="M5 4h14v16l-3-2-4 2-4-2-3 2V4Z"/><path d="M9 9h6M9 13h4"/>',
+  custom: '<path d="M4 7a3 3 0 0 1 3-3h4v6H4V7ZM13 4h4a3 3 0 0 1 3 3v3h-7V4ZM4 12h7v8H7a3 3 0 0 1-3-3v-5ZM13 12h7v5a3 3 0 0 1-3 3h-4v-8Z"/>',
+  grid: '<circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/>',
+  bell: '<path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15L6 17ZM10 21h4"/>',
+  swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  rail: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
 };
 
 export function icon(name) {
@@ -88,17 +105,61 @@ export function debounce(fn, ms) {
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
+// A small coloured tag for a rank, e.g. "Pro+".
+export function rankTag(rank) {
+  if (!rank) return null;
+  const tag = h("span", { class: "tag rank-tag" }, rank.name);
+  tag.style.setProperty("--rank", rank.color || "#888");
+  return tag;
+}
+
+// A round counter for unread things. Hidden when the number is 0.
+export function countBadge(n) {
+  const b = h("span", { class: "badge", hidden: !n, "aria-label": `${n} unread` }, n > 99 ? "99+" : String(n || ""));
+  return b;
+}
+
+export function setBadge(el, n) {
+  el.textContent = n > 99 ? "99+" : String(n || "");
+  el.hidden = !n;
+}
+
+export function longDate(ts) {
+  return new Date(ts * 1000).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// A labelled form field.
+export function field(label, el, hint = "") {
+  return h("label", { class: "field" }, h("span", { class: "field-label" }, label), el, hint ? h("small", { class: "muted" }, hint) : null);
+}
+
+// Date + time <input> helpers (the browser gives local time; the server wants seconds since 1970).
+export function toLocalInput(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+export const fromLocalInput = (value) => (value ? new Date(value).getTime() / 1000 : null);
+
+// Runs an async action, shows the server's message as a toast and reports errors the same way.
+export async function act(promise, after) {
+  try { const res = await promise; if (res?.message) toast(res.message); if (after) await after(res); return res; }
+  catch (e) { toast(e.message, "error"); return null; }
+}
+
 export function emptyState(title, text = "") {
   return h("div", { class: "empty" }, h("strong", {}, title), text ? h("p", {}, text) : null);
 }
 
 // One row in the left list (a person or a group).
-export function listItem({ entity, title, subtitle, time, href, active }) {
-  return h("a", { class: `item${active ? " active" : ""}`, href },
+export function listItem({ entity, title, subtitle, time, href, active, unread = 0 }) {
+  return h("a", { class: `item${active ? " active" : ""}${unread ? " has-unread" : ""}`, href },
     avatar(entity),
     h("div", { class: "item-text" },
       h("div", { class: "item-top" }, h("strong", { class: "item-title" }, title), time ? h("time", {}, time) : null),
-      h("span", { class: "item-sub" }, subtitle || "")));
+      h("span", { class: "item-sub" }, subtitle || "")),
+    unread ? h("span", { class: "badge", "aria-label": `${unread} unread` }, unread > 99 ? "99+" : String(unread)) : null);
 }
 
 let toastBox;
@@ -124,16 +185,16 @@ export function modal(title, content, onClose = null, closable = true) {
     if (onClose) onClose();
   };
   const onKey = (e) => { if (closable && e.key === "Escape") close(); };
-  const overlay = h("div", { class: "overlay", onClick: (e) => { if (closable && e.target === overlay) close(); } },
-    h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-label": title },
+  const dialog = h("div", { class: "dialog", role: "dialog", "aria-modal": "true", "aria-label": title },
       h("div", { class: "dialog-head" },
         h("h2", {}, title),
         closable ? h("button", { class: "icon-btn", type: "button", "aria-label": "Close", onClick: close }, icon("close")) : null),
-      content));
+      content);
+  const overlay = h("div", { class: "overlay", onClick: (e) => { if (closable && e.target === overlay) close(); } }, dialog);
   document.body.append(overlay);
   document.addEventListener("keydown", onKey);
   overlay.querySelector("input, textarea, button.primary")?.focus();
-  return { close };
+  return { close, root: dialog };
 }
 
 export function confirmDialog(title, text, confirmLabel = "Confirm", danger = false) {

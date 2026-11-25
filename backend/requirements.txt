@@ -4,3 +4,4 @@ python-dotenv>=1.0
 waitress
 psycopg[binary,pool]>=3.2
 boto3>=1.34
+pywebpush>=2.0   # web push notifications (also installs cryptography)

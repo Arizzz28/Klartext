@@ -37,7 +37,12 @@ export async function api(method, path, body) {
     clearToken();
     location.href = "login.html";
   }
-  if (!res.ok) throw new ApiError((data && data.error) || `Request failed (${res.status}).`, res.status);
+  if (res.status === 403 && data && data.code === "consent_required") window.dispatchEvent(new CustomEvent("chatisfying:consent"));
+  if (!res.ok) {
+    const err = new ApiError((data && data.error) || `Request failed (${res.status}).`, res.status);
+    err.code = data && data.code;
+    throw err;
+  }
   return data;
 }
 
@@ -46,3 +51,4 @@ export const post = (path, body = {}) => api("POST", path, body);
 export const put = (path, body = {}) => api("PUT", path, body);
 export const patch = (path, body) => api("PATCH", path, body);
 export const del = (path) => api("DELETE", path);
+export const swallow = (promise, fallback = null) => promise.catch(() => fallback);

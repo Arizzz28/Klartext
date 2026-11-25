@@ -1,8 +1,23 @@
 // Your own profile: display name and picture.
-import { patch } from "../api.js";
-import { avatar, fileToAvatar, h, toast } from "../ui.js";
+import { get, patch, post } from "../api.js";
+import { act, avatar, fileToAvatar, h, longDate, rankTag, toast } from "../ui.js";
 
 export const usesList = false;
+
+const STATUS_TEXT = { open: "waiting for an answer", accepted: "accepted", declined: "declined" };
+
+async function offersCard(state) {
+  const data = await get("/api/offers");
+  const text = h("textarea", { class: "input", rows: "3", maxlength: "600", placeholder: "What can you offer? (help, an idea, a favour …)" });
+  const card = h("section", { class: "card" }, h("h2", {}, "Pro offer"), h("p", { class: "muted" }, data.rules));
+  if (data.enabled) {
+    card.append(h("form", { onSubmit: async (e) => { e.preventDefault(); if (await act(post("/api/offers", { text: text.value }))) location.reload(); } }, text,
+      h("button", { class: "btn primary", type: "submit" }, "Send offer")));
+  }
+  if (data.offers.length) card.append(h("ul", { class: "rows" }, data.offers.map((o) => h("li", { class: "row" },
+    h("div", { class: "item-text" }, h("span", {}, o.text), h("span", { class: "item-sub" }, `${longDate(o.created)} · ${STATUS_TEXT[o.status]}${o.reward ? ` · reward: ${o.reward}` : ""}${o.answer ? ` · “${o.answer}”` : ""}`))))));
+  return card;
+}
 
 export async function render({ main, state }) {
   const me = state.me;
@@ -42,5 +57,8 @@ export async function render({ main, state }) {
     h("section", { class: "card" },
       h("dl", { class: "facts" },
         h("dt", {}, "Username"), h("dd", {}, "@" + me.username),
-        h("dt", {}, "Email"), h("dd", {}, me.email)))));
+        h("dt", {}, "Email"), h("dd", {}, me.email),
+        h("dt", {}, "Rank"), h("dd", {}, rankTag(me.rank), me.lease ? ` (rented: ${me.lease.rank.name} until ${longDate(me.lease.until)})` : ""),
+        h("dt", {}, "Features"), h("dd", {}, `${me.perms.length} permissions in your rank`))),
+    state.can("offers.create") ? await offersCard(state) : null));
 }

@@ -17,7 +17,8 @@ import chat_service
 import config
 import db
 import objstore
-from security import ApiError, json_body, login_required, role_of
+import perms
+from security import ApiError, json_body, login_required, perm_required
 
 bp = Blueprint("uploads", __name__, url_prefix="/api/uploads")
 MIME_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*$")
@@ -49,7 +50,7 @@ def summary(row):
 
 
 @bp.post("")
-@login_required
+@perm_required("uploads.use")
 def start_upload():
     if not objstore.enabled():
         raise ApiError("Uploads are not set up on this server yet.", 503)
@@ -68,7 +69,7 @@ def start_upload():
         raise ApiError("The file is empty.")
 
     chat_type = chat_key = None
-    is_admin = role_of(user) == "admin"
+    is_admin = perms.has_perm(user, "admin.settings")
     if kind == "attachment":
         if not settings["uploads_enabled"]:
             raise ApiError("Uploads are switched off by the admins.", 403)
