@@ -620,3 +620,6 @@ main.legal ul { padding-left: 22px; display: grid; gap: 6px; }
 .shell.v3 .nav { min-height: 0; }
 .shell.v3.rail .me-tools .rank-tag { display: none; }
 .shell.v3.rail .me-tools { flex-direction: column; }
+
+/* A button that looks like a link (used in the consent dialog: log out / download data / delete account). */
+.linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--brand, currentColor); text-decoration: underline; cursor: pointer; }

@@ -55,11 +55,12 @@ const ICONS = {
   bell: '<path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15L6 17ZM10 21h4"/>',
   swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
   rail: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  page: '<path d="M7 3h7l4 4v14H7zM14 3v4h4"/>',      // used when a new tab names an icon that does not exist yet
 };
 
 export function icon(name) {
   const span = h("span", { class: "icon", "aria-hidden": "true" });
-  span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+  span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ICONS.page}</svg>`;
   return span;
 }
 

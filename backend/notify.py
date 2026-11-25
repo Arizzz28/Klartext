@@ -145,6 +145,26 @@ def push_key():
     return jsonify({"enabled": push_enabled(), "public_key": config.VAPID_PUBLIC_KEY if push_enabled() else ""})
 
 
+# The server sends a message to the address the browser gives it. Without a check, somebody could enter ANY web
+# address and make this server call it (SSRF). So only the push services of the big browser makers are accepted.
+PUSH_SERVICE_HOSTS = ("fcm.googleapis.com", "android.googleapis.com", "updates.push.services.mozilla.com",
+                      "push.apple.com", "notify.windows.com")
+
+
+def _is_push_service(endpoint):
+    from urllib.parse import urlparse
+    if not isinstance(endpoint, str) or len(endpoint) > 1000:
+        return False
+    try:
+        p = urlparse(endpoint)
+        port = p.port
+    except ValueError:
+        return False
+    host = (p.hostname or "").lower()
+    return (p.scheme == "https" and not p.username and not p.password and port in (None, 443)
+            and any(host == h or host.endswith("." + h) for h in PUSH_SERVICE_HOSTS))
+
+
 @bp.post("/push/subscribe")
 @perm_required("push.use")
 def push_subscribe():
@@ -153,7 +173,7 @@ def push_subscribe():
     data = json_body()
     keys = data.get("keys") or {}
     endpoint = str(data.get("endpoint", ""))
-    if not endpoint.startswith("https://") or len(endpoint) > 1000 or not isinstance(keys, dict) \
+    if not _is_push_service(endpoint) or not isinstance(keys, dict) \
             or not isinstance(keys.get("p256dh"), str) or not isinstance(keys.get("auth"), str) \
             or len(keys["p256dh"]) > 200 or len(keys["auth"]) > 100:
         raise ApiError("Invalid push subscription.")

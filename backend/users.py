@@ -14,8 +14,8 @@ from security import (ApiError, check_password, clean_avatar, clean_text, find_u
 
 bp = Blueprint("users", __name__, url_prefix="/api")
 
-TAB_IDS = ("chats", "groups", "missions", "calendar", "tasks", "notes", "widgets", "search", "music", "visitors",
-           "games", "forum", "ai", "whatsnew", "custom", "profile", "settings", "admin")
+# Which pages exist is defined in ONE place: frontend/tabs.js. The server only checks that a name looks like a name,
+# so adding a page never needs a change here (the frontend ignores names it does not know).
 
 
 @bp.get("/me")
@@ -93,7 +93,8 @@ def put_prefs():
     if "tabs" in data:
         need(user, "tabs.editor")
         tabs = data["tabs"]
-        if not isinstance(tabs, list) or len(tabs) > 30 or any(t not in TAB_IDS for t in tabs) or len(set(tabs)) != len(tabs):
+        if (not isinstance(tabs, list) or len(tabs) > 40 or len(set(map(str, tabs))) != len(tabs)
+                or not all(isinstance(t, str) and appsettings.TAB_ID_RE.match(t) for t in tabs)):
             raise ApiError("Invalid tab list.")
         changes["tabs"] = tabs
     if "bubble" in data:
@@ -120,6 +121,8 @@ def put_prefs():
         if not isinstance(w, list) or len(w) > 12 or any(x not in WIDGETS for x in w):
             raise ApiError("Unknown widget.")
         changes["widgets"] = w
+    if "start_page" in data:                       # everybody may choose where the app opens ("" = use the default)
+        changes["start_page"] = "" if data["start_page"] == "" else appsettings.valid_tab_id(data["start_page"])
     if "push_preview" in data:
         need(user, "push.use")
         changes["push_preview"] = bool(data["push_preview"])

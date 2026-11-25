@@ -201,7 +201,53 @@ coins/missions/shop, unread counters, push, the AI rules (key never leaves the s
 
 ### Known limits / open points
 - The in-memory rate limit and the single-process lock mean: run **one** server process.
-- `/debug` still exists from Version 2. Remove it before you invite many people.
-- There is no "delete my own account" button and no data export yet; the operator does that on request (the privacy text says so).
+- `/debug` still exists, but it now only shows that the server runs and which build it is (no settings, no route list).
+- People can download their data and delete their own account (Settings -> "Your data"). Deleting an account deletes its
+  **private chats for both sides**; this is said in the dialog and in the texts.
 - Login log, audit log and reports have **no automatic deletion** yet.
 - Whether and how a legal operator duty applies to you (imprint, GDPR controller role, minimum age) is **a legal question**. Please ask someone qualified.
+
+
+## Version 3.1: review, security, new pages, start page
+
+### What the review found and changed
+| | Finding | Change |
+|---|---|---|
+| important | `/debug` listed settings and routes to everybody | now only `status` and `build` |
+| important | Push subscriptions accepted **any** https address; the server then called it (SSRF) | only the push services of Apple, Google, Mozilla and Microsoft are accepted (`notify.py`) |
+| important | No security headers on the API | `X-Content-Type-Options`, `Referrer-Policy`, `Cache-Control: no-store`, a strict `Content-Security-Policy` on every answer |
+| important | Deleting an account left moderation reports (copies of messages) behind | reports filed by the person or containing their messages are deleted, too |
+| important | No way to delete your own account or to get your data | Settings -> "Your data" (`backend/accounts.py`); works even without accepting new Terms |
+| useful | A blocked account saw an error page with no way out | the error page now has a "Log out" button |
+| useful | Page list was repeated in `users.py` | now only `frontend/tabs.js` (see below) |
+| new | Start page after login | configurable (see below) |
+
+Tested and found **safe**: a normal user cannot read or change other people's chats, groups, files, notes, calendar, tasks, playlists,
+forum posts, notifications; cannot reach any admin route; cannot raise their own rank (mass assignment); cannot get at the Owner.
+The tests are in `backend/tests/test_security.py` (run `cd backend && python -m pytest tests -q`). They also walk over **every** API
+route and check that it refuses requests without a login, and they check that the frontend never builds HTML from data.
+
+### Add a new page (3 steps, no regeneration of the project)
+1. **Copy** `frontend/pages/_new_page_template.js` to `frontend/pages/<name>.js` and write your page (it fills the empty `main` element).
+2. **Register it** with one line in `frontend/tabs.js`:
+   `import * as recipes from "./pages/recipes.js";` and `{ id: "recipes", label: "Recipes", icon: "page", page: recipes, perm: "tabs.recipes" }`
+   in the `TABS` list. The navigation, the tab bubble, the tab editor, the start-page choice and the default sidebar pick it up automatically.
+   Leave out `perm` for a page everybody may see; add `pinned: false` if it should not be in the sidebar until a person adds it.
+3. **If the page has its own data**, add the server side: a blueprint in a new `backend/<name>.py` with routes protected by
+   `@perm_required("tabs.recipes")`, register it in the list in `backend/app.py`, and add the permission key `("tabs.recipes", "Recipes", "Features")`
+   to the list in `backend/perms.py`. Then give the permission to the ranks that should have it (Admin -> Ranks; the Owner always has it).
+   **Hiding a tab is only convenience. The server must check the permission on every route.**
+If a rank does not have the permission, the tab is simply not shown and its address sends the person to Chats (never in a loop).
+
+### Start page after login
+- The Owner sets the default for everybody: **Admin -> Settings -> General -> Start page after login**.
+- Everybody can choose their own: **Settings -> Start page** ("Default" = the Owner's choice).
+- Order: own choice -> Owner's default -> Chats. A page the person is not allowed to see is skipped. Links with a page in them
+  (for example from a notification) always open that page. The Back button does not return to the empty address.
+
+### Rate limit behind a proxy (optional, `PROXY_HOPS`)
+Render puts its own proxy in front of the server. Without a setting, the server sees the **proxy's** address for every visitor.
+That is why the lock after wrong passwords is also tied to the **username** (not only the address). It works, but one person who
+guesses wrong passwords for a username can lock that username for a while.
+`PROXY_HOPS=0` (default) is always safe. Set `PROXY_HOPS=1` **only** after you checked that exactly one proxy stands in front of
+the server (Render's documentation / a test with a request showing `X-Forwarded-For`). A wrong number lets visitors fake their address.

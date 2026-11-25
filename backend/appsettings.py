@@ -1,5 +1,6 @@
 """Global settings that admins can change in the app (stored in the "settings" data set)."""
 import copy
+import re
 
 import config
 import storage
@@ -16,6 +17,7 @@ DEFAULTS = {
     "blocked_extensions": [".exe", ".bat", ".cmd", ".com", ".scr", ".msi", ".js", ".vbs", ".ps1",
                            ".jar", ".html", ".htm", ".svg", ".apk", ".dll", ".sh"],
     "messages_per_minute": 30,
+    "start_page": "chats",                  # where people land after logging in (they can choose their own in Settings)
     "loading": {
         "title": "Chatisfying",
         "image_asset": "",                  # id of an uploaded picture
@@ -97,6 +99,17 @@ def get():
     return _merge(DEFAULTS, storage.read("settings"))
 
 
+TAB_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,29}$")
+
+
+def valid_tab_id(value):
+    """The name of a page/tab, e.g. "chats" or "calendar". Which names really exist is decided in the frontend
+    (frontend/tabs.js), so a new page needs no change here. An unknown name just falls back to "chats"."""
+    if not isinstance(value, str) or not TAB_ID_RE.match(value):
+        raise ApiError("That is not a valid page name.")
+    return value
+
+
 def _check(key, value, rule):
     kind = rule[0]
     if kind is bool:
@@ -136,6 +149,8 @@ def validate(changes):
             clean["background"] = {k: _check(f"background.{k}", v, _BG_RULES[k]) for k, v in value.items() if k in _BG_RULES}
         elif key in _V3_RULES and isinstance(value, dict):
             clean[key] = {k: _check(f"{key}.{k}", v, _V3_RULES[key][k]) for k, v in value.items() if k in _V3_RULES[key]}
+        elif key == "start_page":
+            clean[key] = valid_tab_id(value)
         elif key == "default_rank":
             if not isinstance(value, str) or len(value) > 40:
                 raise ApiError("Invalid rank.")

@@ -300,6 +300,14 @@ def purge_user(username, delete_group_messages):
             db.execute(f"DELETE FROM attachments WHERE message_id IN ({db.placeholders(part)})", part)
             db.execute(f"DELETE FROM messages WHERE id IN ({db.placeholders(part)})", part)
             objstore.delete(keys)
+    # moderation reports: copies of messages (snapshots) written by this person, and reports this person filed
+    for r in db.query("SELECT id, reporter, snapshot FROM reports"):
+        try:
+            sender = json.loads(r["snapshot"]).get("sender")
+        except ValueError:
+            sender = None
+        if r["reporter"] == username or sender == username:
+            db.execute("DELETE FROM reports WHERE id = ?", (r["id"],))
     # everything else this person owns
     keys = [a["storage_key"] for a in db.query("SELECT storage_key FROM attachments WHERE username = ?", (username,))]
     db.execute("DELETE FROM attachments WHERE username = ?", (username,))

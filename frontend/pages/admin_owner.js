@@ -1,6 +1,7 @@
 // Admin tabs for ranks, settings, notes, What's New and ads. Used by admin.js.
 // The sections only the Owner may change are hidden for everybody else AND refused by the server.
 import { del, get, patch, post, put } from "../api.js";
+import { TABS } from "../tabs.js";
 import { act, confirmDialog, emptyState, field, h, rankTag, toast } from "../ui.js";
 import { uploadFile } from "../upload.js";
 
@@ -126,6 +127,7 @@ export function ownerTabs({ state, reload, when }) {
     const assets = { image: undefined, music: undefined };
     const mode = h("select", { class: "input" }, [["whitelist", "Whitelist only"], ["open_approval", "Open, admin approves each account"], ["closed", "Closed"]].map(([v, l]) => h("option", { value: v, selected: s.registration_mode === v }, l)));
     const announcement = h("input", { class: "input", maxlength: "300", value: s.announcement, placeholder: "Shown to everybody at the top. Empty = no banner." });
+    const startPage = h("select", { class: "input" }, TABS.filter((t) => t.id !== "admin").map((t) => h("option", { value: t.id, selected: s.start_page === t.id }, t.label)));
     const perMinute = num(s.messages_per_minute, 1, 600);
     const uploadsOn = check(s.uploads_enabled, "Uploads allowed", storageOk ? "" : "File storage is not configured on the server.");
     const maxImage = num(s.max_image_mb, 1, 200), maxVideo = num(s.max_video_mb, 1, 200), maxFile = num(s.max_file_mb, 1, 200), quota = num(s.user_quota_mb, 10, 100000);
@@ -215,7 +217,7 @@ export function ownerTabs({ state, reload, when }) {
       if (assets.music !== undefined) loading.music_asset = assets.music;
       try {
         await put("/api/admin/settings", {
-          registration_mode: mode.value, announcement: announcement.value, messages_per_minute: Number(perMinute.value),
+          registration_mode: mode.value, start_page: startPage.value, announcement: announcement.value, messages_per_minute: Number(perMinute.value),
           uploads_enabled: uploadsOn.el.checked, max_image_mb: Number(maxImage.value), max_video_mb: Number(maxVideo.value),
           max_file_mb: Number(maxFile.value), user_quota_mb: Number(quota.value),
           blocked_extensions: blocked.value.split(",").map((x) => x.trim()).filter(Boolean),
@@ -228,7 +230,8 @@ export function ownerTabs({ state, reload, when }) {
     }
 
     return h("form", { class: "settings-form", onSubmit: (e) => { e.preventDefault(); save(); } },
-      h("section", { class: "card" }, h("h2", {}, "General"), field("Who can register", mode), field("Announcement banner", announcement), field("Messages per minute and person", perMinute)),
+      h("section", { class: "card" }, h("h2", {}, "General"), field("Who can register", mode), field("Announcement banner", announcement), field("Messages per minute and person", perMinute),
+        field("Start page after login", startPage, "Used when a person has not chosen their own. If they may not see that page, Chats opens.")),
       h("section", { class: "card" }, h("h2", {}, "Uploads"), uploadsOn.row,
         h("div", { class: "grid-2" }, field("Max picture size (MB)", maxImage), field("Max video size (MB)", maxVideo), field("Max other file size (MB)", maxFile), field("Storage per person (MB)", quota)),
         field("Blocked file endings", blocked, "Separated by commas. Programs and web pages are blocked by default.")),

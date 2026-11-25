@@ -1,8 +1,10 @@
 // Settings: theme, password, log out.
 import { get, post, put } from "../api.js";
+import { downloadMyData, openDeleteDialog } from "../account.js";
 import { logout } from "../auth.js";
 import { disablePush, enablePush, pushState } from "../push.js";
 import { openTabEditor } from "../tabeditor.js";
+import { availableTabs } from "../tabs.js";
 import { THEME_KEY, applyTheme, h, toast } from "../ui.js";
 import { uploadFile } from "../upload.js";
 
@@ -51,6 +53,18 @@ function layoutCard(state) {
     row.push(h("label", { class: "choice" }, box, h("span", {}, h("strong", {}, "Floating tab bubble"), h("small", {}, "A movable round button that opens all your tabs."))));
   }
   return h("section", { class: "card" }, h("h2", {}, "Layout and tabs"), ...row);
+}
+
+// "After logging in, open …": everybody can choose; an empty choice means the default of the operator.
+function startCard(state) {
+  const options = availableTabs(state.me);
+  const current = state.me.prefs?.start_page || "";
+  const sel = h("select", { class: "input", onChange: () => savePrefs(state, { start_page: sel.value }) },
+    h("option", { value: "", selected: current === "" }, "Default"),
+    options.map((t) => h("option", { value: t.id, selected: current === t.id }, t.label)));
+  return h("section", { class: "card" }, h("h2", {}, "Start page"),
+    h("label", { class: "field" }, h("span", { class: "field-label" }, "Open this page after logging in"), sel),
+    h("p", { class: "hint" }, "Links you tap (for example from a notification) still open the page they point to."));
 }
 
 async function pushCard(state) {
@@ -130,10 +144,15 @@ export async function render({ main, state }) {
       h("h2", {}, "Appearance"),
       h("fieldset", { class: "choices" }, h("legend", { class: "sr-only" }, "Theme"),
         themeOption("system", "Match my device"), themeOption("light", "Light"), themeOption("dark", "Dark"))),
-    layoutC, pushC,
+    startCard(state), layoutC, pushC,
     loadingCard,
     h("section", { class: "card" }, h("h2", {}, "Password"), form),
     legalCard(),
+    h("section", { class: "card" }, h("h2", {}, "Your data"),
+      h("p", { class: "muted" }, "You can download a copy of what is stored about you, or delete your account and your data."),
+      h("div", { class: "row-actions" },
+        h("button", { class: "btn", type: "button", onClick: downloadMyData }, "Download my data"),
+        h("button", { class: "btn danger-text", type: "button", onClick: () => openDeleteDialog(state) }, "Delete my account…"))),
     h("section", { class: "card" }, h("h2", {}, "Session"),
       h("button", { class: "btn", type: "button", onClick: logout }, "Log out"))));
 }

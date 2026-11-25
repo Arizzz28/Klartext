@@ -2,6 +2,7 @@
 // (new texts => everybody has to accept again). The server enforces this too: without it nothing else works.
 import { post } from "./api.js";
 import { fillLegal } from "./legal.js";
+import { downloadMyData, openDeleteDialog } from "./account.js";
 import { h, modal } from "./ui.js";
 
 async function loadText(url) {
@@ -34,6 +35,8 @@ export async function showConsent(state, onDone) {
     h("label", { class: "choice" }, check,
       h("span", {}, h("strong", {}, "Ich akzeptiere die Nutzungsbedingungen"),
         h("small", {}, "und habe die Datenschutzerklärung zur Kenntnis genommen."))),
+    h("p", { class: "hint" }, "Du stimmst nicht zu? Du kannst dich abmelden, ", h("button", { class: "linklike", type: "button", onClick: downloadMyData }, "deine Daten herunterladen"),
+      " oder ", h("button", { class: "linklike", type: "button", onClick: () => openDeleteDialog(state) }, "dein Konto löschen"), "."),
     msg, h("div", { class: "dialog-actions" }, h("button", { class: "btn", type: "button", onClick: () => state.logout() }, "Abmelden"), button));
   const dialog = modal("Nutzungsbedingungen & Datenschutz", form, null, false);
   dialog.root?.classList?.add("wide");

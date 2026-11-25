@@ -4,7 +4,7 @@ import { logout, requireLogin } from "./auth.js";
 import { showConsent } from "./consent.js";
 import { startLoading } from "./loading.js";
 import { openTabEditor } from "./tabeditor.js";
-import { TABS, availableTabs, can, pinnedTabs } from "./tabs.js";
+import { TABS, availableTabs, can, pinnedTabs, startTabId } from "./tabs.js";
 import { avatar, brand, confirmDialog, debounce, formatTime, h, icon, modal, rankTag, setBadge, toast } from "./ui.js";
 import { enablePush, needsHomeScreen, pushState, pushSupported } from "./push.js";
 
@@ -32,7 +32,9 @@ async function init() {
   } catch (e) {
     loader.done();
     app.className = "boot";
-    app.replaceChildren(h("p", {}, e.message), h("button", { class: "btn primary", onClick: () => location.reload() }, "Try again"));
+    // "Log out" is here so a blocked or broken account never gets stuck on this screen.
+    app.replaceChildren(h("p", {}, e.message), h("button", { class: "btn primary", onClick: () => location.reload() }, "Try again"),
+      h("button", { class: "btn", onClick: logout }, "Log out"));
     return;
   }
   if (!state.me) return;
@@ -61,6 +63,9 @@ async function start(app, loader) {
   if (started) return;
   started = true;
   buildShell(app);
+  // Opened without a page in the address (fresh login, home-screen icon): go to the start page. replaceState instead
+  // of changing location.hash, so the Back button does not bounce the person back to this moment.
+  if (!/^#\/?[^/]/.test(location.hash)) history.replaceState(null, "", "#/" + startTabId(state.me, state.config));
   window.addEventListener("hashchange", route);
   await refreshUnread();
   await route();

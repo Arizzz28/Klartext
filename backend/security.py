@@ -166,6 +166,7 @@ def _user_from_request():
 
 # Paths that work even before the Terms are accepted (the person has to be able to read and accept them).
 CONSENT_EXEMPT = {("GET", "/api/me"), ("POST", "/api/me/consent"), ("GET", "/api/legal"),
+                  ("GET", "/api/me/export"), ("POST", "/api/me/delete"),          # leaving and taking your data never needs consent
                   ("GET", "/api/config"), ("GET", "/api/loading"), ("POST", "/api/auth/logout")}
 
 

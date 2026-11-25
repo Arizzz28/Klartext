@@ -27,6 +27,8 @@ def test_register_needs_checkbox_on_server(client):
 
 
 def test_registration_stores_consent_version_and_time(client):
+    with storage.transaction("users") as db:            # other test files may already have created the Owner account
+        db["users"].pop("boss", None)
     ok = {"username": "Boss", "email": "boss@example.com", "accept_terms": True,
           "terms_version": legalconf.TERMS_VERSION, "privacy_version": legalconf.PRIVACY_VERSION}
     assert client.post("/api/auth/register/start", json=ok).status_code == 200
@@ -206,7 +208,7 @@ def test_bubble_tabs_layout_need_permissions(client, make_user):
     assert client.put("/api/me/prefs", headers=basic, json={"layout": {"side": "right", "list_width": 300}}).status_code == 403
     assert client.put("/api/me/prefs", headers=pro, json={"bubble": {"on": True, "pos": {"x": 0.5, "y": 0.5}}}).status_code == 200
     assert client.put("/api/me/prefs", headers=pro, json={"tabs": ["chats", "tasks"]}).status_code == 200
-    assert client.put("/api/me/prefs", headers=pro, json={"tabs": ["chats", "evil"]}).status_code == 400
+    assert client.put("/api/me/prefs", headers=pro, json={"tabs": ["chats", "Evil Tab!"]}).status_code == 400
     assert client.put("/api/me/prefs", headers=pro, json={"layout": {"side": "right", "list_width": 5000}}).status_code == 400
     assert client.put("/api/me/prefs", headers=pro, json={"layout": {"side": "right", "list_width": 300}}).status_code == 200
 
@@ -240,7 +242,7 @@ def test_push_subscribe_and_send(client, make_user, monkeypatch):
     sent = []
     monkeypatch.setattr(notify, "_webpush_send", lambda sub, payload: sent.append((sub["endpoint"], payload)))
     a, b = make_user("pa"), make_user("pb")
-    sub = {"endpoint": "https://push.example.com/abc", "keys": {"p256dh": "k" * 20, "auth": "a" * 10}}
+    sub = {"endpoint": "https://fcm.googleapis.com/fcm/send/abc", "keys": {"p256dh": "k" * 20, "auth": "a" * 10}}
     assert client.post("/api/push/subscribe", headers=b, json=sub).status_code == 201
     assert client.post("/api/push/subscribe", headers=b, json={**sub, "endpoint": "http://insecure"}).status_code == 400
     monkeypatch.setattr(notify, "push_to", lambda names, title, body, url="", sync=False: notify._deliver(list(names), {"title": title, "body": body, "url": url}))
@@ -251,10 +253,10 @@ def test_push_subscribe_and_send(client, make_user, monkeypatch):
     client.post("/api/chats/dm/pb/messages", headers=a, json={"text": "now visible"})
     assert "now visible" in sent[-1][1]
     # the sender is never notified about their own message
-    client.post("/api/push/subscribe", headers=a, json={**sub, "endpoint": "https://push.example.com/mine"})
+    client.post("/api/push/subscribe", headers=a, json={**sub, "endpoint": "https://fcm.googleapis.com/fcm/send/mine"})
     n = len(sent)
     client.post("/api/chats/dm/pb/messages", headers=a, json={"text": "third"})
-    assert all(s[0] != "https://push.example.com/mine" for s in sent[n:])
+    assert all(s[0] != "https://fcm.googleapis.com/fcm/send/mine" for s in sent[n:])
 
 
 def test_push_removes_dead_subscriptions(client, make_user, monkeypatch):
@@ -264,10 +266,10 @@ def test_push_removes_dead_subscriptions(client, make_user, monkeypatch):
         raise Gone()
     monkeypatch.setattr(notify, "_webpush_send", boom)
     h = make_user("pdead")
-    client.post("/api/push/subscribe", headers=h, json={"endpoint": "https://push.example.com/dead", "keys": {"p256dh": "k" * 20, "auth": "a" * 10}})
+    client.post("/api/push/subscribe", headers=h, json={"endpoint": "https://fcm.googleapis.com/fcm/send/dead", "keys": {"p256dh": "k" * 20, "auth": "a" * 10}})
     notify._deliver(["pdead"], {"title": "x"})
     import db
-    assert db.query("SELECT 1 AS x FROM push_subscriptions WHERE endpoint = ?", ("https://push.example.com/dead",)) == []
+    assert db.query("SELECT 1 AS x FROM push_subscriptions WHERE endpoint = ?", ("https://fcm.googleapis.com/fcm/send/dead",)) == []
 
 
 # ------------------------------------------------------------------ missions, coins, shop

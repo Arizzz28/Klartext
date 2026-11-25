@@ -6,6 +6,7 @@ import time
 
 from flask import Blueprint, g, jsonify, request
 
+import accounts
 import appsettings
 import audit
 import chat_service
@@ -203,21 +204,8 @@ def delete_user(username):
         if str(data.get("confirm", "")).lower() != target["username"].lower():
             raise ApiError("Type the username to confirm the deletion.")
         name = target["username"]
-        for gid, group in list(db_["groups"].items()):
-            if name not in group["members"]:
-                continue
-            was_only_admin = group["members"][name] == "admin" and sum(r == "admin" for r in group["members"].values()) == 1
-            del group["members"][name]
-            if not group["members"]:
-                del db_["groups"][gid]
-                purge_groups.append(gid)
-            elif was_only_admin:
-                group["members"][next(iter(group["members"]))] = "admin"      # ownership goes to the next member
-        db_["invitations"] = [i for i in db_["invitations"] if name not in (i["from"], i["to"])]
-        del db_["users"][name.lower()]
-    chat_service.purge_user(name, delete_group_messages)
-    for gid in purge_groups:
-        chat_service.purge_chat("group", gid)
+        purge_groups = accounts.remove_account_records(db_, name)
+    accounts.finish_deletion(name, delete_group_messages, purge_groups)
     audit.log(g.user["username"], "delete_user", name, "group messages deleted" if delete_group_messages else "group messages kept")
     return jsonify({"message": f"{name} was deleted."})
 

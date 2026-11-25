@@ -12,6 +12,7 @@ import config
 import storage
 from security import ApiError
 
+import accounts
 import admin
 import ai
 import auth
@@ -44,6 +45,9 @@ def create_app():
     # Login uses an Authorization header (not cookies), so other websites cannot make the browser
     # send credentials on their own. That is why classic CSRF tokens are not needed here.
     CORS(app, origins=config.ALLOWED_ORIGINS, allow_headers=["Content-Type", "Authorization"])
+    if config.PROXY_HOPS > 0:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=config.PROXY_HOPS)
     storage.ensure_files()
     db.init()
     # Version 3 start-up steps. All of them are safe to run again and again (they only fill in what is missing).
@@ -54,7 +58,7 @@ def create_app():
     economy.seed_missions()
     extras.seed_release()
 
-    for module in (auth, users, messages, groups, invitations, admin, moderation, settings, uploads, notify, economy,
+    for module in (auth, users, accounts, messages, groups, invitations, admin, moderation, settings, uploads, notify, economy,
                    offers, notes, planner, social, games, extras, ai):
         app.register_blueprint(module.bp)
 
@@ -62,6 +66,16 @@ def create_app():
     @app.before_request
     def log_request():
         print(f"[REQUEST] {request.method} {request.path}", flush=True)
+
+    # Headers for every answer. The API only sends JSON, so nothing may ever be treated as a web page or be cached
+    # (private data!), and no address of the app may leak to other sites.
+    @app.after_request
+    def security_headers(resp):
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        resp.headers.setdefault("Cache-Control", "no-store")
+        resp.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+        return resp
 
     @app.errorhandler(ApiError)
     def handle_api_error(err):
@@ -95,16 +109,10 @@ def create_app():
     def health():
         return jsonify({"status": "ok"})
 
-    # DEBUG ONLY: proves WHICH code is running. Remove before real production use.
+    # Proves WHICH code is running (useful after a deploy). It shows nothing about settings or routes.
     @app.get("/debug")
     def debug():
-        print("[DEBUG] /debug called", flush=True)
-        return jsonify({
-            "status": "Chatisfying Backend Debug OK",
-            "build": BUILD,
-            "smtp_configured": bool(config.SMTP_HOST),
-            "routes": sorted(r.rule for r in app.url_map.iter_rules() if r.rule.startswith(("/api/auth", "/debug", "/api/health"))),
-        })
+        return jsonify({"status": "Chatisfying Backend OK", "build": BUILD})
 
     return app
 
