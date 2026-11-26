@@ -666,7 +666,7 @@ def test_every_route_needs_login_or_is_public(client):
     """No API route (except the few public ones) may answer without a login."""
     import app as app_module
     public = {"/api/health", "/api/legal", "/api/config", "/api/loading", "/debug", "/api/auth/login", "/api/auth/register/start",
-              "/api/auth/register/verify", "/api/auth/register/complete", "/api/pc/heartbeat"}
+              "/api/auth/register/verify", "/api/auth/register/complete", "/api/pc/heartbeat", "/api/i18n/languages", "/api/i18n/<lang>"}
     for rule in app_module.app.url_map.iter_rules():
         if not rule.rule.startswith("/api") or rule.rule in public:
             continue

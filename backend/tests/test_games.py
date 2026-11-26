@@ -188,3 +188,21 @@ def test_streak_badges_polls(client, make_user):
     assert client.post(f"/api/fun/polls/{pid}/close", headers=b).status_code == 403
     assert client.post(f"/api/fun/polls/{pid}/close", headers=a).status_code == 200
     assert client.post(f"/api/fun/polls/{pid}/vote", headers=a, json={"choice": 0}).status_code == 404
+
+
+def test_translations_only_approved_are_used(client, owner, make_user):
+    import i18n
+    i18n.seed()
+    langs = J(client.get("/api/i18n/languages"))
+    de = next(x for x in langs if x["code"] == "de")
+    assert not de["complete"]                                                       # not every text is approved -> "partly translated"
+    assert client.get("/api/i18n/xx").status_code == 404
+    assert client.post("/api/admin/i18n/source", headers=owner, json={"source": "Hello test text"}).status_code == 201
+    basic = make_user("tr1")
+    assert client.put("/api/admin/i18n", headers=basic, json={"lang": "de", "source": "Hello test text", "text": "x"}).status_code == 403
+    assert client.put("/api/admin/i18n", headers=owner, json={"lang": "de", "source": "Hello test text", "text": "Hallo Testtext"}).status_code == 200
+    assert "Hello test text" not in J(client.get("/api/i18n/de"))["texts"]            # a draft is not used yet
+    assert client.put("/api/admin/i18n", headers=owner, json={"lang": "de", "source": "Hello test text", "text": "Hallo Testtext", "approved": True}).status_code == 200
+    assert J(client.get("/api/i18n/de"))["texts"]["Hello test text"] == "Hallo Testtext"
+    assert client.put("/api/me/prefs", headers=basic, json={"lang": "de"}).status_code == 200
+    assert client.put("/api/me/prefs", headers=basic, json={"lang": "fr"}).status_code == 400

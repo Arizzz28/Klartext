@@ -34,6 +34,7 @@ import perms
 import plans
 import planner
 import fun
+import i18n
 import pc
 import prank
 import settings
@@ -64,9 +65,10 @@ def create_app():
     notify.init_read_state()
     economy.seed_missions()
     extras.seed_release()
+    i18n.seed()
 
     for module in (auth, users, accounts, messages, groups, invitations, admin, moderation, settings, uploads, notify, economy,
-                   offers, notes, planner, social, games, matches, extras, ai, diag, plans, prank, pc, fun):
+                   offers, notes, planner, social, games, matches, extras, ai, diag, plans, prank, pc, fun, i18n):
         app.register_blueprint(module.bp)
 
     # DEBUG ONLY: logs every request (method + path, never headers, bodies or query strings).

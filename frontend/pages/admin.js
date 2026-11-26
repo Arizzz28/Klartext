@@ -1,5 +1,6 @@
 // Admin area. Which tabs you see depends on your PERMISSIONS (not on a fixed role).
 // The server checks every action again - hiding a tab here is only convenience.
+import { i18nView } from "./admin_i18n.js";
 import { del, get, patch, post } from "../api.js";
 import { act, avatar, confirmDialog, emptyState, field, formatBytes, h, longDate, modal, openMenu, rankTag, toast } from "../ui.js";
 import { ownerTabs } from "./admin_owner.js";
@@ -22,6 +23,7 @@ export async function render({ main, state }) {
     can("admin.ads") && ["ads", "Ads"],
     can("admin.access") && ["ranks", "Ranks"],
     can("admin.settings") && ["settings", "Settings"],
+    can("translations.review") && ["i18n", "Translations"],
     can("admin.audit") && ["audit", "Audit log"],
   ].filter(Boolean);
   if (!TABS.length) { main.append(emptyState("Nothing to manage", "Your rank has no admin tools.")); return; }
@@ -43,7 +45,7 @@ export async function render({ main, state }) {
     content.replaceChildren(h("p", { class: "muted" }, "Loading…"));
     try {
       const views = { overview: overviewView, users: usersView, whitelist: whitelistView, groups: groupsView, private: privateView,
-        reports: reportsView, offers: offersView, requests: requestsView, audit: auditView, ...ownerTabs({ state, reload, when }) };
+        reports: reportsView, i18n: i18nView, offers: offersView, requests: requestsView, audit: auditView, ...ownerTabs({ state, reload, when }) };
       content.replaceChildren(await views[tab]());
     } catch (e) { content.replaceChildren(emptyState("Couldn't load this tab", e.message)); }
   }

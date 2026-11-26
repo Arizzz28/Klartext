@@ -217,6 +217,7 @@ def V4_STATEMENTS(pk):
         "CREATE TABLE IF NOT EXISTS streaks (username TEXT PRIMARY KEY, last_day TEXT NOT NULL DEFAULT '', streak INTEGER NOT NULL DEFAULT 0, best INTEGER NOT NULL DEFAULT 0)",
         f"CREATE TABLE IF NOT EXISTS polls (id {pk}, author TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, created DOUBLE PRECISION NOT NULL, closed INTEGER NOT NULL DEFAULT 0)",
         "CREATE TABLE IF NOT EXISTS poll_votes (poll_id INTEGER NOT NULL, username TEXT NOT NULL, choice INTEGER NOT NULL, PRIMARY KEY (poll_id, username))",
+        "CREATE TABLE IF NOT EXISTS i18n (lang TEXT NOT NULL, source TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', approved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (lang, source))",
         "CREATE TABLE IF NOT EXISTS prank_optin (username TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0)",
         f"CREATE TABLE IF NOT EXISTS prank_inbox (id {pk}, to_user TEXT NOT NULL, from_user TEXT NOT NULL, kind TEXT NOT NULL, created DOUBLE PRECISION NOT NULL, seen INTEGER NOT NULL DEFAULT 0)",
         "CREATE INDEX IF NOT EXISTS idx_prank_to ON prank_inbox (to_user, seen)",

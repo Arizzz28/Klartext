@@ -32,6 +32,18 @@ function designCard(state) {
         h("span", {}, h("strong", {}, DESIGN_TEXT[d] || d))))));
 }
 
+async function languageCard(state) {
+  const { currentLang, setLang } = await import("../i18n.js");
+  const langs = await get("/api/i18n/languages").catch(() => []);
+  if (langs.length < 2) return null;
+  const sel = h("select", { class: "input", onChange: async () => {
+    if (await savePrefs(state, { lang: sel.value })) { setLang(sel.value); location.reload(); }
+  } }, langs.map((l) => h("option", { value: l.code, selected: currentLang() === l.code }, l.complete ? l.name : `${l.name} (partly translated)`)));
+  return h("section", { class: "card" }, h("h2", {}, "Language"),
+    h("label", { class: "field" }, h("span", { class: "field-label" }, "Language of the app"), sel),
+    h("p", { class: "hint" }, "Texts that are not translated (or not checked yet) stay English."));
+}
+
 function layoutCard(state) {
   const canMove = state.can("layout.move"), canTabs = state.can("tabs.editor"), canBubble = state.can("tabs.bubble");
   const canWin = state.can("layout.windows"), canPc = state.can("pc.backend");
@@ -145,7 +157,7 @@ export async function render({ main, state }) {
     h("label", { class: "field" }, h("span", { class: "field-label" }, "Repeat new password"), again),
     msg, submit);
 
-  const [layoutC, designC, pushC] = [layoutCard(state), designCard(state), await pushCard(state)];
+  const [layoutC, designC, pushC, langC] = [layoutCard(state), designCard(state), await pushCard(state), await languageCard(state)];
   main.append(h("div", { class: "page" },
     h("h1", {}, "Settings"),
     designC,
@@ -153,7 +165,7 @@ export async function render({ main, state }) {
       h("h2", {}, "Appearance"),
       h("fieldset", { class: "choices" }, h("legend", { class: "sr-only" }, "Theme"),
         themeOption("system", "Match my device"), themeOption("light", "Light"), themeOption("dark", "Dark"))),
-    startCard(state), layoutC, pushC,
+    langC, startCard(state), layoutC, pushC,
     loadingCard,
     h("section", { class: "card" }, h("h2", {}, "Password"), form),
     legalCard(),

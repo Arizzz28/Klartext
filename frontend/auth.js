@@ -1,4 +1,5 @@
 // Login, registration and logout. Also drives the login page (login.html).
+import { initI18n } from "./i18n.js";
 import { api, clearToken, get, getToken, post, setToken } from "./api.js";
 import { brand, h } from "./ui.js";
 
@@ -137,4 +138,4 @@ function initLoginPage() {
   draw();
 }
 
-if (document.body.dataset.page === "login") initLoginPage();
+if (document.body.dataset.page === "login") { initI18n(); initLoginPage(); }

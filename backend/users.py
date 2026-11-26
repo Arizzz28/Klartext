@@ -105,6 +105,11 @@ def put_prefs():
         pos = b.get("pos")
         ok_pos = isinstance(pos, dict) and all(isinstance(pos.get(k), (int, float)) and 0 <= pos[k] <= 1 for k in ("x", "y"))
         changes["bubble"] = {"on": bool(b.get("on", True)), "pos": {"x": float(pos["x"]), "y": float(pos["y"])} if ok_pos else {"x": 0.9, "y": 0.8}}
+    if "lang" in data:                             # interface language ("" or "en" = English)
+        import i18n
+        if data["lang"] not in ("", "en") and data["lang"] not in i18n.LANGS:
+            raise ApiError("Unknown language.")
+        changes["lang"] = "" if data["lang"] == "en" else data["lang"]
     if "use_pc" in data:                           # send my requests to the Owner's PC while it is online
         need(user, "pc.backend")
         changes["use_pc"] = bool(data["use_pc"])

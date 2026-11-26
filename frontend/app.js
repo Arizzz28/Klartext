@@ -1,5 +1,6 @@
 // Main logic: builds the page frame (sidebar, list, main area, tab bubble) and switches pages by URL hash.
 import { get, post, put } from "./api.js";
+import { initI18n } from "./i18n.js";
 import { logout, requireLogin } from "./auth.js";
 import { showConsent } from "./consent.js";
 import { startLoading } from "./loading.js";
@@ -25,6 +26,7 @@ let routeToken = 0;
 let started = false;
 
 async function init() {
+  initI18n();
   const loader = startLoading();
   const app = document.getElementById("app");
   try {
@@ -38,6 +40,8 @@ async function init() {
     return;
   }
   if (!state.me) return;
+  { const { currentLang, setLang } = await import("./i18n.js"), want = state.me.prefs?.lang || "en";     // the language is saved per account
+    if (want !== currentLang()) { setLang(want); location.reload(); return; } }
   try { state.config = await get("/api/config"); } catch { /* the app works without it */ }
   window.addEventListener("chatisfying:pc-lost", () => toast("The PC server is not reachable. Using the normal server.", "info"));
   if (state.can("pc.backend") && state.me.prefs?.use_pc) {         // the Owner's PC may do the computing while it is online

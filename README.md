@@ -299,3 +299,11 @@ Safety: `.env.pc` holds the keys to your database – never share it. The PC acc
 4. **Pranks**: please test the jumpscare on yourself first. Loud sudden things can scare people; that is why it is opt-in.
 5. **Video calls** and a real 3D engine are only planned (see above).
 6. The **Backblaze CORS problem** needs the script above to be run once (I can not reach your Backblaze account).
+
+### Translations (every text can be translated)
+- Settings → Language. The list shows "Deutsch (partly translated)" until **every** text of that language is approved; then it just says "Deutsch".
+- You (or admins with the permission "translations.review") work in **Admin → Translations**: write a translation, press "Approve". Only approved translations are shown to people; everything else stays English. "Approve all waiting" approves all drafts at once, "Add a text" makes a new text translatable.
+- The list of texts is `backend/i18n_sources.json` (found automatically in the code, ~1000 texts). Texts that contain numbers or names (for example "Your best: 12") are built by the code and can not be translated this way yet. If one is important, tell me and I will change it.
+- A new language: add one line to `LANGS` in `backend/i18n.py` (for example `"fr": "Français"`).
+- People's own messages are never translated (they are marked `translate="no"`). Do the same for other places with user text.
+- The legal pages (Terms, Privacy, Imprint) are written in German and are not part of this system.

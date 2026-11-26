@@ -195,7 +195,7 @@ export function createChatPane({ me, chat, title, subtitle = "", avatarEntity, b
       bubble.append(h("em", { class: "msg-deleted" }, "Message deleted"));
     } else {
       m.attachments.forEach((a) => bubble.append(renderAttachment(a)));
-      if (m.text) bubble.append(h("span", { class: "msg-text" }, m.text));
+      if (m.text) bubble.append(h("span", { class: "msg-text", translate: "no" }, m.text));
     }
     bubble.append(h("time", { class: "msg-time" }, formatTime(m.ts) + (m.edited ? " · edited" : "")));
     const el = h("div", { class: `msg ${mine ? "mine" : "theirs"}${m.deleted ? " is-deleted" : ""}`, "data-id": m.id },
