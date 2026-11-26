@@ -15,15 +15,67 @@ RELEASE_ID = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,19}$")
 
 
 # ---------------------------------------------------------------- What's New
+V4_NEWS = ("4.0.0", "Chatisfying 4.0 - the update", """What is new in 4.0:
+
+GAMES
+- Tic-Tac-Toe, Word race, Checkers, Chess, Memory and Typing duel: play against a friend, the computer or alone
+- The computer has 4 levels: easy, medium, hard, impossible
+- Challenge friends with an invitation, collect Elo (skill rating) in games between people
+- Games unlock one after the other by points (admins set the order)
+
+MISSIONS AND PLANS
+- Random missions with rarity: common, uncommon, rare, super rare, impossible
+- Free missions, translation missions (an admin checks them)
+- New Plans tab: ranks, benefits and offers
+- Send coins to friends
+
+MORE
+- Window mode: tabs as movable windows you can fold into the bubble
+- Fun tab: daily streak, badges, polls
+- Prank tab (only for people who switch pranks on)
+- Faster app: fewer requests, less lag
+- Account export and self-deletion, new Terms and Privacy texts (please accept them once)""")
+
+V4_FEATURES = ("4.0.1", "All Chatisfying features", """CHATTING
+- Private chats and group chats, invitations, emoji reactions, clear chats
+- Upload pictures, videos and files (max. 200 MB per file, set by admins)
+- Unread counters that work on all your devices, push messages
+- Chat backgrounds, loading picture and loading music
+
+TABS
+- Missions and coins, Plans (ranks and offers), Calendar, Tasks, Notes, Search, Music links
+- Forum, Profile visitors, AI helper, What's new, own custom tabs, Widgets
+- Games, Fun (streak, badges, polls), Pranks
+
+GAMES
+- Tic-Tac-Toe, Word race, Checkers, Chess, Memory, Typing duel
+- Reaction, Aim trainer, Number guess, 3D maze, Shooter
+- Computer levels, invitations, Elo, leaderboards, unlock order
+
+LOOK AND LAYOUT
+- Five design modes, floating tab bubble, edit tabs and their order
+- Move the sidebars, choose your start page, window mode
+
+ACCOUNT AND SAFETY
+- Ranks and permissions for every feature (the Owner decides)
+- Terms, Privacy and Imprint pages, export your data, delete your account
+- Admin tools: users, whitelist, reports, audit log, settings
+- Optional PC server for faster response when the owner's PC is online""")
+
+
 def seed_release():
-    if db.query("SELECT 1 AS x FROM releases LIMIT 1"):
-        return
-    db.execute("INSERT INTO releases (id, title, body, created, created_by) VALUES (?, ?, ?, ?, ?)",
-               ("3.0.0", "Chatisfying 3.0",
-                "Ranks and permissions, five design modes, a floating tab bubble, unread counters, push messages, "
-                "missions and coins, calendar, tasks, notes, search, music links, forum, games and an AI helper. "
-                "New: please read and accept the Terms of Service and the Privacy Policy.",
-                time.time(), "system"))
+    """Makes sure the release notes exist (adds new ones to old databases, too; never overwrites)."""
+    if not db.query("SELECT 1 AS x FROM releases LIMIT 1"):
+        db.execute("INSERT INTO releases (id, title, body, created, created_by) VALUES (?, ?, ?, ?, ?)",
+                   ("3.0.0", "Chatisfying 3.0",
+                    "Ranks and permissions, five design modes, a floating tab bubble, unread counters, push messages, "
+                    "missions and coins, calendar, tasks, notes, search, music links, forum, games and an AI helper. "
+                    "New: please read and accept the Terms of Service and the Privacy Policy.",
+                    time.time(), "system"))
+    now = time.time()
+    for i, (rid, title, body) in enumerate((V4_NEWS, V4_FEATURES)):
+        if not db.query("SELECT 1 AS x FROM releases WHERE id = ?", (rid,)):
+            db.execute("INSERT INTO releases (id, title, body, created, created_by) VALUES (?, ?, ?, ?, ?)", (rid, title, body, now + i, "system"))
 
 
 def unseen_count(username):
