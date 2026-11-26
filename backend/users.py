@@ -105,6 +105,14 @@ def put_prefs():
         pos = b.get("pos")
         ok_pos = isinstance(pos, dict) and all(isinstance(pos.get(k), (int, float)) and 0 <= pos[k] <= 1 for k in ("x", "y"))
         changes["bubble"] = {"on": bool(b.get("on", True)), "pos": {"x": float(pos["x"]), "y": float(pos["y"])} if ok_pos else {"x": 0.9, "y": 0.8}}
+    if "use_pc" in data:                           # send my requests to the Owner's PC while it is online
+        need(user, "pc.backend")
+        changes["use_pc"] = bool(data["use_pc"])
+    if "windows" in data:                          # desktop mode: tabs open as movable windows
+        need(user, "layout.windows")
+        if not isinstance(data["windows"], dict):
+            raise ApiError("Invalid window settings.")
+        changes["windows"] = {"on": bool(data["windows"].get("on"))}
     if "layout" in data:
         need(user, "layout.move")
         lay = data["layout"]

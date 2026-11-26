@@ -273,7 +273,16 @@ def test_push_removes_dead_subscriptions(client, make_user, monkeypatch):
 
 
 # ------------------------------------------------------------------ missions, coins, shop
-def test_mission_progress_and_single_payout(client, make_user, owner):
+@pytest.fixture
+def all_missions():
+    """The classic mode (everybody sees every mission) makes these tests independent of the random draw."""
+    import appsettings
+    appsettings.save({"missions": {"mode": "all"}})
+    yield
+    appsettings.save({"missions": {"mode": "random"}})
+
+
+def test_mission_progress_and_single_payout(client, make_user, owner, all_missions):
     h, other = make_user("miss1"), make_user("miss2")
     mid = next(m["id"] for m in J(client.get("/api/missions", headers=h))["missions"] if m["kind"] == "messages" and m["period"] == "daily")
     assert client.post(f"/api/missions/{mid}/claim", headers=h).status_code == 400            # not finished
@@ -287,7 +296,7 @@ def test_mission_progress_and_single_payout(client, make_user, owner):
     assert J(client.get("/api/coins", headers=h))["coins"] == J(r)["reward"]
 
 
-def test_other_peoples_messages_do_not_count(client, make_user):
+def test_other_peoples_messages_do_not_count(client, make_user, all_missions):
     h = make_user("miss3")
     mid = next(m["id"] for m in J(client.get("/api/missions", headers=h))["missions"] if m["kind"] == "messages" and m["period"] == "daily")
     other = make_user("miss4")
@@ -502,7 +511,7 @@ def test_games_have_own_permissions(client, make_user, owner):
     assert client.post("/api/games/memory/score", headers=pp, json={"score": 12}).status_code == 200
     assert J(client.post("/api/games/memory/score", headers=pp, json={"score": 30}))["best"] == 12                 # lower is better
     assert client.post("/api/games/memory/score", headers=pp, json={"score": -1}).status_code == 400
-    assert any(g["id"] == "memory" and not g["allowed"] for g in J(client.get("/api/games", headers=basic)))
+    assert any(g["id"] == "memory" and not g["allowed"] for g in J(client.get("/api/games", headers=basic))["games"])
 
 
 def test_profile_visitors(client, make_user):
@@ -657,7 +666,7 @@ def test_every_route_needs_login_or_is_public(client):
     """No API route (except the few public ones) may answer without a login."""
     import app as app_module
     public = {"/api/health", "/api/legal", "/api/config", "/api/loading", "/debug", "/api/auth/login", "/api/auth/register/start",
-              "/api/auth/register/verify", "/api/auth/register/complete"}
+              "/api/auth/register/verify", "/api/auth/register/complete", "/api/pc/heartbeat"}
     for rule in app_module.app.url_map.iter_rules():
         if not rule.rule.startswith("/api") or rule.rule in public:
             continue

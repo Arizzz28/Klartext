@@ -251,3 +251,51 @@ That is why the lock after wrong passwords is also tied to the **username** (not
 guesses wrong passwords for a username can lock that username for a while.
 `PROXY_HOPS=0` (default) is always safe. Set `PROXY_HOPS=1` **only** after you checked that exactly one proxy stands in front of
 the server (Render's documentation / a test with a request showing `X-Forwarded-For`). A wrong number lets visitors fake their address.
+
+## Version 4: games, missions, plans, windows, PC server
+
+### What is new
+- **Missions**: action "none" = free (the person just presses collect). Random mode: each person gets slots per hour/day/week; every mission has a rarity (common, uncommon, rare, super rare, impossible) with a chance set by the Owner. Translation missions: a person translates texts into German, an admin checks, then the points come.
+- **Plans tab**: ranks, benefits, offers. The ranks Pro+, Pro++, Pro+++ are hidden by default (Owner can show them again: Ranks → "offered"). The text about supporting the servers is set by the Owner (Settings → Owner: Plans tab). **No payment is built.** See "Open points" below.
+- **Games**: Tic-Tac-Toe, Word race, Checkers, Chess, Memory, Typing duel (against a person, the computer or alone), Reaction, Aim trainer, Number guess, 3D maze, Shooter. Games unlock one after the other by points; the order, the points and on/off are set by admins (Admin → Settings → Games). Which rank gets which game is the normal permission list (Owner → Ranks, "Game: …").
+- **Computer levels**: easy (random moves), medium (sometimes smart), hard (mostly smart, a little random), impossible (Tic-Tac-Toe: can not be beaten; chess: looks 3 moves ahead; other games: the strongest setting).
+- **Elo**: only for games between two people. Start 1000, K = 32. Beating a stronger person gives more points.
+- **Fun tab** (3 own ideas): daily streak with coins, badges (calculated from what you did), polls.
+- **Prank tab**: pranks only reach people who switched them on themselves. The jumpscare is an original drawing, not a character from a game.
+- **Window mode** (permission "layout.windows"): bubble → "Window mode: on". Tabs open as movable windows, can be folded into the dock and several can be open (Owner sets the maximum).
+- **PC server** (see below) and **speed** improvements (fewer requests, no repeated identical requests, light polling).
+- **Video calls**: not built. Plan: 1:1 calls with WebRTC (the browsers talk directly), our server only passes the "who calls whom" notes. It needs a STUN server (a free one from Google is common; that is a third party and must go into the privacy text) and for strict networks a TURN server (costs money). Group calls need much more. Ask before this is started.
+
+### Fixing the Backblaze upload ("The upload failed. Check your connection.")
+This message is almost always a CORS problem: the browser is not allowed to send the file to Backblaze directly.
+1. In Admin → Settings (Owner) use the storage check (`/api/admin/storage-check`): it tells you what is wrong.
+2. Set the CORS rule with the script (once, on any computer, with a **temporary** Backblaze key that has the right to change bucket settings; delete that key afterwards):
+   `python setup_cors.py --origin https://arizzz28.github.io --bucket klartext-storage --endpoint https://s3.eu-central-003.backblazeb2.com --key-id KEY_ID --key APPLICATION_KEY`
+   The origin has **no** slash at the end and no path (`/Klartext` does not belong in it).
+3. Never change the bucket to public. The files stay private; the server hands out short-lived links.
+
+### PC server (your PC does the computing)
+What it is: the same backend runs on your Windows PC. Data stays in Neon and Backblaze, so the PC needs no files and nothing is lost when it is off. If the PC is off, a message appears and the normal server (Render) is used. If you get money for servers later, you can upgrade Render and you may not need the PC at all.
+Set-up:
+1. On Render add the variable `PC_SECRET` (a long random text, e.g. `python -c "import secrets; print(secrets.token_hex(24))"`).
+2. On the PC: put the `backend` folder somewhere, copy `.env.pc.example` to `.env.pc` and fill it in (same values as on Render + the same `PC_SECRET`). Put `cloudflared.exe` (free from Cloudflare) next to `pc_agent.py`, or write your own tunnel address into `PC_PUBLIC_URL`.
+3. Double-click `start_pc_backend.bat`. Keep the window open. After about a minute Admin → Settings shows "PC is online".
+4. Admin (Owner) → Settings → "Use my PC as an extra server" on. Ranks → permission "Use the PC server" for the ranks you want (default: Pro+++). Each person also switches it on in Settings.
+Safety: `.env.pc` holds the keys to your database – never share it. The PC accepts the same login tokens as Render. Only the heartbeat route is open without login and it needs the secret. The tunnel (Cloudflare) is a third party that sees the traffic; it is in the privacy text. Do not run the PC server on a school or work computer.
+
+### Changing games yourself (without asking anybody)
+- **Add or remove a game from the list**: `backend/games.py`, list `GAMES` (id, name, text, kind). Also give it a permission default in `backend/perms.py` (`NEW_DEFAULTS`).
+- **Change the unlock points / order**: no code needed, Admin → Settings → Games. Defaults live in `DEFAULT_UNLOCK` and `DEFAULT_ORDER` in `games.py`.
+- **Points for wins**: `WIN_POINTS`, `HUMAN_WIN`, `HUMAN_DRAW`, `PLAY_POINTS` in `games.py`.
+- **How strong the computer is**: `TTT_STRENGTH` (Tic-Tac-Toe, chance of a perfect move), `BOT_GUESS_CHANCE` in `matches.py` (Word race), depth in `ch_bot` (chess) – all in `backend/gamelogic.py`.
+- **Rules of a board game**: `backend/gamelogic.py`. Every game has `new`, `move`, `view`, `bot` functions and is listed in `GAMES` at the bottom. The server runs the rules, the browser only draws (`frontend/pages/games.js`, object `BOARDS`).
+- **A new single-player game**: write a function in `frontend/pages/games_solo.js`, add it to `SOLO`, add an entry with `"kind": "solo"` and `limits` in `games.py` (the limits stop impossible scores).
+- After every change run the tests: `cd backend && python -m pytest tests -q`.
+
+### Open points (for you and your parents)
+1. **Taking money.** The app has no payment on purpose. If classmates give you money for ranks or servers, that is a different legal situation: imprint/provider details (§ 5 DDG), taxes, and as a minor you need your parents (they are legally responsible). The texts mention this but are not legal advice. Ask your parents before you collect anything.
+2. **Legal texts** were updated (games, pranks, PC server, polls, translations). Parents should read them again; versions changed, so everybody has to accept them once more.
+3. **"Levels"** in your list was understood as "hide the ranks Pro+/Pro++/Pro+++". Tell me if you meant something else.
+4. **Pranks**: please test the jumpscare on yourself first. Loud sudden things can scare people; that is why it is opt-in.
+5. **Video calls** and a real 3D engine are only planned (see above).
+6. The **Backblaze CORS problem** needs the script above to be run once (I can not reach your Backblaze account).

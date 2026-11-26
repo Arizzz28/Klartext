@@ -110,6 +110,7 @@ export function createChatPane({ me, chat, title, subtitle = "", avatarEntity, b
     post(`${base}/read`).then(() => window.dispatchEvent(new CustomEvent("chatisfying:read"))).catch(() => { lastReadId = 0; });
   }
 
+  let quiet = 0, lastSig = "", stopped = false, timer = null;
   async function poll() {
     if (busy || document.hidden) return;
     busy = true;
@@ -120,6 +121,9 @@ export function createChatPane({ me, chat, title, subtitle = "", avatarEntity, b
       applyWindow(res.messages);
       olderBtn.hidden = !(windowFull && !olderDone);
       markRead(res.messages);
+      const sig = JSON.stringify(res.messages);          // nothing new -> ask less often (less load, less lag)
+      quiet = sig === lastSig ? quiet + 1 : 0;
+      lastSig = sig;
     } catch { /* a short network problem: the next poll tries again */ }
     busy = false;
   }
@@ -444,17 +448,21 @@ export function createChatPane({ me, chat, title, subtitle = "", avatarEntity, b
   }
 
   // ---------- start ----------
-  const onVisible = () => { if (!document.hidden) poll(); };
+  const onVisible = () => { if (!document.hidden) { quiet = 0; poll(); } };
   document.addEventListener("visibilitychange", onVisible);
   loadSettings();
   poll();
-  const timer = setInterval(poll, 3000);          // "live" updates: ask the server every 3 seconds
+  // "Live" updates: every 3 seconds while something happens, slower (6 s, then 10 s) while the chat is quiet.
+  const next = () => { timer = setTimeout(async () => { await poll(); if (!stopped) next(); }, quiet > 20 ? 10000 : quiet > 8 ? 6000 : 3000); };
+  next();
+  input.addEventListener("input", () => { quiet = 0; });
 
   return {
     root, updateHeader,
     focus: () => input.focus(),
     destroy() {
-      clearInterval(timer);
+      stopped = true;
+      clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
       pending.forEach((p) => { if (p.state !== "error") p.handle.cancel(); });
     },

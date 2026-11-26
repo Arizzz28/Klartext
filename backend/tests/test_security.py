@@ -32,7 +32,7 @@ def _fill(rule):
 
 PUBLIC = {("POST", "/api/auth/register/start"), ("POST", "/api/auth/register/verify"), ("POST", "/api/auth/register/complete"),
           ("POST", "/api/auth/login"), ("GET", "/api/config"), ("GET", "/api/loading"), ("GET", "/api/legal"),
-          ("GET", "/api/health")}
+          ("GET", "/api/health"), ("POST", "/api/pc/heartbeat")}   # the heartbeat is protected by the PC secret
 
 
 def _api_routes():

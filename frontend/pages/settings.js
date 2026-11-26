@@ -34,7 +34,8 @@ function designCard(state) {
 
 function layoutCard(state) {
   const canMove = state.can("layout.move"), canTabs = state.can("tabs.editor"), canBubble = state.can("tabs.bubble");
-  if (!canMove && !canTabs && !canBubble) return null;
+  const canWin = state.can("layout.windows"), canPc = state.can("pc.backend");
+  if (!canMove && !canTabs && !canBubble && !canWin && !canPc) return null;
   const lay = { side: "left", list_side: "inner", list_width: 330, rail: true, ...(state.me.prefs?.layout || {}) };
   const row = [];
   if (canMove) {
@@ -51,6 +52,14 @@ function layoutCard(state) {
     const on = state.me.prefs?.bubble?.on !== false;
     const box = h("input", { type: "checkbox", checked: on, onChange: () => savePrefs(state, { bubble: { on: box.checked, pos: state.me.prefs?.bubble?.pos || { x: 0.9, y: 0.8 } } }) });
     row.push(h("label", { class: "choice" }, box, h("span", {}, h("strong", {}, "Floating tab bubble"), h("small", {}, "A movable round button that opens all your tabs."))));
+  }
+  if (canWin) {
+    const w = h("input", { type: "checkbox", checked: Boolean(state.me.prefs?.windows?.on), onChange: () => savePrefs(state, { windows: { on: w.checked } }) });
+    row.push(h("label", { class: "choice" }, w, h("span", {}, h("strong", {}, "Window mode"), h("small", {}, "Tabs from the bubble open as movable windows you can fold away. Several can be open."))));
+  }
+  if (canPc) {
+    const pc = h("input", { type: "checkbox", checked: Boolean(state.me.prefs?.use_pc), onChange: () => savePrefs(state, { use_pc: pc.checked }) });
+    row.push(h("label", { class: "choice" }, pc, h("span", {}, h("strong", {}, "Use the PC server"), h("small", {}, "When the owner's PC is online it does the computing for you. If it is off, the normal server is used. Takes effect after a reload."))));
   }
   return h("section", { class: "card" }, h("h2", {}, "Layout and tabs"), ...row);
 }

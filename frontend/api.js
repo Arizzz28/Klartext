@@ -13,7 +13,13 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(method, path, body) {
+// Where requests go. Normally the main server; if the Owner's PC server is online and this person uses it, the PC's address.
+// If the PC does not answer, we go back to the main server at once (and tell the person).
+let base = API_URL;
+export const setBase = (url) => { base = url || API_URL; };
+export const usingPc = () => base !== API_URL;
+
+export async function api(method, path, body, _retry = true) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const token = getToken();
@@ -21,12 +27,17 @@ export async function api(method, path, body) {
 
   let res;
   try {
-    res = await fetch(API_URL + path, {
+    res = await fetch(base + path, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
+    if (base !== API_URL && _retry) {
+      base = API_URL;
+      window.dispatchEvent(new CustomEvent("chatisfying:pc-lost"));
+      return api(method, path, body, false);
+    }
     throw new ApiError("Can't reach the server. Check your connection and try again.", 0);
   }
 
@@ -46,7 +57,13 @@ export async function api(method, path, body) {
   return data;
 }
 
-export const get = (path) => api("GET", path);
+const running = new Map();
+export const get = (path) => {                // two identical GETs at the same time -> one request (less lag on a slow server)
+  if (running.has(path)) return running.get(path);
+  const p = api("GET", path).finally(() => running.delete(path));
+  running.set(path, p);
+  return p;
+};
 export const post = (path, body = {}) => api("POST", path, body);
 export const put = (path, body = {}) => api("PUT", path, body);
 export const patch = (path, body) => api("PATCH", path, body);

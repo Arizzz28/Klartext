@@ -43,15 +43,23 @@ DEFAULTS = {
     "visitors": {"enabled": True, "keep_days": 30},
     "shop": {"enabled": True, "max_days": 7, "gift_max_days": 7, "items": [
         {"rank_id": "pro", "price": 200, "days": 1}, {"rank_id": "pro_plus", "price": 500, "days": 1}]},
-    "coins": {"admin_daily_gift_cap": 500, "start_coins": 0},
-    "missions": {"enabled": True},
+    "coins": {"admin_daily_gift_cap": 500, "start_coins": 0, "user_daily_send_cap": 200},
+    # Games (decided by ADMINS): are games on, are they unlocked one after the other, in which order, how many points each needs
+    "pc": {"enabled": False},                   # the Owner's PC may take over the work while it is online (see pc.py)
+    "windows": {"max_open": 4},               # desktop mode: how many windows a person may have open at once
+    "games": {"enabled": True, "sequential": True, "order": [], "unlock": {}, "disabled": []},
+    "plans": {"support_enabled": True,
+              "support_text": "If you voluntarily give the Owner money, it will be used to make the servers better. "
+                              "Nothing is paid inside this app and nobody has to pay for anything."},
+    "missions": {"enabled": True, "mode": "random", "slots_hourly": 0, "slots_daily": 3, "slots_weekly": 2,
+                 "w_common": 60, "w_uncommon": 25, "w_rare": 10, "w_super_rare": 4, "w_impossible": 1},
     "legal": {"operator_name": "", "operator_address": "", "operator_email": "", "operator_phone": "",
               "min_age": "", "note": ""},
 }
 
 STAT_KEYS = ("users", "pending", "ranks", "messages", "messages_24h", "groups", "files", "storage_mb", "open_reports",
              "offers_open", "coins_total", "notes", "tasks", "forum_posts", "logins_24h")
-OWNER_KEYS = ("default_rank", "offers", "stats", "ai", "ads", "visitors", "shop", "coins", "missions", "legal")
+OWNER_KEYS = ("default_rank", "offers", "stats", "ai", "ads", "visitors", "shop", "coins", "missions", "plans", "legal", "pc")
 
 # What an admin may send, with limits. (type, min, max) or (type, allowed values).
 _RULES = {
@@ -78,8 +86,12 @@ _V3_RULES = {
     "ai": {"enabled": (bool,), "daily_limit": (int, 1, 500), "max_context_messages": (int, 0, 100)},
     "ads": {"enabled": (bool,), "every_n_visits": (int, 1, 100)},
     "visitors": {"enabled": (bool,), "keep_days": (int, 1, 365)},
-    "coins": {"admin_daily_gift_cap": (int, 0, 1_000_000), "start_coins": (int, 0, 1_000_000)},
-    "missions": {"enabled": (bool,)},
+    "coins": {"admin_daily_gift_cap": (int, 0, 1_000_000), "start_coins": (int, 0, 1_000_000), "user_daily_send_cap": (int, 0, 1_000_000)},
+    "plans": {"support_enabled": (bool,), "support_text": (str, 500)},
+    "pc": {"enabled": (bool,)},
+    "missions": {"enabled": (bool,), "mode": (str, ("all", "random")), "slots_hourly": (int, 0, 10), "slots_daily": (int, 0, 20),
+                 "slots_weekly": (int, 0, 20), "w_common": (int, 0, 1000), "w_uncommon": (int, 0, 1000), "w_rare": (int, 0, 1000),
+                 "w_super_rare": (int, 0, 1000), "w_impossible": (int, 0, 1000)},
     "legal": {"operator_name": (str, 120), "operator_address": (str, 300), "operator_email": (str, 120),
               "operator_phone": (str, 60), "min_age": (str, 60), "note": (str, 1500)},
 }
@@ -149,6 +161,10 @@ def validate(changes):
             clean["background"] = {k: _check(f"background.{k}", v, _BG_RULES[k]) for k, v in value.items() if k in _BG_RULES}
         elif key in _V3_RULES and isinstance(value, dict):
             clean[key] = {k: _check(f"{key}.{k}", v, _V3_RULES[key][k]) for k, v in value.items() if k in _V3_RULES[key]}
+        elif key == "windows" and isinstance(value, dict):
+            clean["windows"] = {"max_open": _check("windows.max_open", value.get("max_open", 4), (int, 1, 12))}
+        elif key == "games" and isinstance(value, dict):
+            clean["games"] = _check_games(value)
         elif key == "start_page":
             clean[key] = valid_tab_id(value)
         elif key == "default_rank":
@@ -165,6 +181,30 @@ def validate(changes):
         elif key in _RULES:
             clean[key] = _check(key, value, _RULES[key])
     return clean
+
+
+def _check_games(value):
+    import games
+    out = {}
+    for k in ("enabled", "sequential"):
+        if k in value:
+            out[k] = _check(f"games.{k}", value[k], (bool,))
+    if "order" in value:
+        order = value["order"]
+        if not isinstance(order, list) or any(i not in games.BY_ID for i in order) or len(set(order)) != len(order):
+            raise ApiError("The game order contains an unknown or repeated game.")
+        out["order"] = order
+    if "disabled" in value:
+        dis = value["disabled"]
+        if not isinstance(dis, list) or any(i not in games.BY_ID for i in dis):
+            raise ApiError("Unknown game in the list of switched-off games.")
+        out["disabled"] = sorted(set(dis))
+    if "unlock" in value:
+        un = value["unlock"]
+        if not isinstance(un, dict) or any(k not in games.BY_ID for k in un):
+            raise ApiError("Unknown game in the unlock points.")
+        out["unlock"] = {k: _check(f"unlock.{k}", v, (int, 0, 100000)) for k, v in un.items()}
+    return out
 
 
 def _check_shop(value):

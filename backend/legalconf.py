@@ -6,8 +6,8 @@ The texts themselves are the pages frontend/terms.html and frontend/privacy.html
 """
 import time
 
-TERMS_VERSION = "2026-11-25-2"
-PRIVACY_VERSION = "2026-11-25-2"
+TERMS_VERSION = "2026-11-26-1"
+PRIVACY_VERSION = "2026-11-26-1"
 
 
 def consent_ok(user):

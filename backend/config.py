@@ -49,6 +49,8 @@ SMTP_FROM = os.environ.get("SMTP_FROM", "Chatisfying <no-reply@example.com>")
 # How many proxies stand in front of this server (Render has its own). Needed so the rate limit sees the real address of
 # the visitor and not the address of the proxy. 0 = trust nobody (default, always safe). Only raise it when you know the
 # number: a wrong number lets visitors fake their address. See README, "Rate limit behind a proxy".
+# Shared secret between this server and the Owner's PC server (see pc.py). Empty = the PC feature is off.
+PC_SECRET = os.environ.get("PC_SECRET", "").strip()
 PROXY_HOPS = int(os.environ.get("PROXY_HOPS", "0") or 0)
 
 TOKEN_TTL = 7 * 24 * 3600      # login stays valid for 7 days

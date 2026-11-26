@@ -9,6 +9,7 @@
 - Admins and the Owner can gift coins (admins up to a daily cap) and temporary ranks.
 """
 import datetime
+import random
 import time
 
 from flask import Blueprint, g, jsonify
@@ -24,18 +25,43 @@ from security import ApiError, find_user, json_body, need, perm_required, public
 bp = Blueprint("economy", __name__, url_prefix="/api")
 
 KINDS = {
+    "none": "Nothing to do (free reward)",
     "messages": "Write messages",
     "reactions": "React to messages",
     "uploads": "Send files",
     "logins": "Log in",
     "notes": "Write notes",
     "tasks_done": "Finish tasks",
+    "translate": "Translate texts into German (an admin checks them)",
 }
+PERIODS = {"hourly": "every hour", "daily": "every day", "weekly": "every week"}
+
+# How rare a mission is. The WEIGHT decides how often it is drawn (the Owner can change the weights in Admin -> Settings).
+RARITIES = {
+    "common": {"label": "Common", "color": "#6b7b78", "weight": 60},
+    "uncommon": {"label": "Uncommon", "color": "#2a9d5c", "weight": 25},
+    "rare": {"label": "Rare", "color": "#2f6fd0", "weight": 10},
+    "super_rare": {"label": "SUPER RARE", "color": "#7c4dcc", "weight": 4},
+    "impossible": {"label": "IMPOSSIBLE", "color": "#c93d57", "weight": 1},
+}
+
+
+def rarity_weights():
+    cfg = appsettings.get()["missions"]
+    return {k: max(0, int(cfg.get(f"w_{k}", v["weight"]))) for k, v in RARITIES.items()}
+
+
+def rarity_chances():
+    w = rarity_weights()
+    total = sum(w.values()) or 1
+    return {k: round(100 * v / total, 1) for k, v in w.items()}
 
 
 # ---------------------------------------------------------------- time periods
 def _period_start(period, now=None):
     now = datetime.datetime.fromtimestamp(now or time.time(), datetime.timezone.utc)
+    if period == "hourly":
+        return now.replace(minute=0, second=0, microsecond=0)
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if period == "weekly":
         day -= datetime.timedelta(days=day.weekday())
@@ -44,12 +70,30 @@ def _period_start(period, now=None):
 
 def period_key(period, now=None):
     start = _period_start(period, now)
-    return start.strftime("%G-W%V") if period == "weekly" else start.strftime("%Y-%m-%d")
+    if period == "weekly":
+        return start.strftime("%G-W%V")
+    return start.strftime("%Y-%m-%d-%H") if period == "hourly" else start.strftime("%Y-%m-%d")
+
+
+def seconds_until_reset(period, now=None):
+    now = now or time.time()
+    start = _period_start(period, now).timestamp()
+    length = {"hourly": 3600, "daily": 86400, "weekly": 7 * 86400}[period]
+    return max(0, int(start + length - now))
+
+
+def approved_translations(username, mission_id, key):
+    return db.query("SELECT COUNT(*) AS n FROM translation_tasks WHERE username = ? AND mission_id = ? AND period_key = ? AND status = 'approved'",
+                    (username, mission_id, key))[0]["n"]
 
 
 def progress(user, mission, now=None):
     start = _period_start(mission["period"], now).timestamp()
     name, kind = user["username"], mission["kind"]
+    if kind == "none":
+        return mission["target"]                      # a free reward: nothing to do, it can be collected right away
+    if kind == "translate":
+        return approved_translations(name, mission["id"], period_key(mission["period"], now))
     if kind == "messages":
         sql, p = "SELECT COUNT(*) AS n FROM messages WHERE sender = ? AND is_system = 0 AND deleted = 0 AND created >= ?", (name, start)
     elif kind == "reactions":
@@ -95,23 +139,69 @@ def my_wallet():
 
 
 # ---------------------------------------------------------------- missions
+def _slots(period):
+    return int(appsettings.get()["missions"].get(f"slots_{period}", 0))
+
+
+def ensure_draws(username, now=None):
+    """Random mode: every person gets their own random missions per period. The draw is saved, so it stays the same until
+    the period is over (then a new one is drawn). Returns the set of mission ids the person may see and collect."""
+    cfg = appsettings.get()["missions"]
+    if cfg.get("mode") != "random":
+        return None                                    # None = everybody sees every active mission (the old behaviour)
+    weights = rarity_weights()
+    chosen = set()
+    for period in PERIODS:
+        key = period_key(period, now)
+        have = {r["mission_id"] for r in db.query("SELECT mission_id FROM mission_draws WHERE username = ? AND period = ? AND period_key = ?",
+                                                  (username, period, key))}
+        pool = [m for m in db.query("SELECT id, rarity FROM missions WHERE active = 1 AND period = ?", (period,))]
+        live = {m["id"] for m in pool}
+        have &= live                                   # a deleted or switched-off mission frees its slot
+        free = [m for m in pool if m["id"] not in have]
+        rng = random.SystemRandom()
+        while len(have) < _slots(period) and free:
+            w = [weights.get(m["rarity"], 1) for m in free]
+            if sum(w) <= 0:
+                w = [1] * len(free)
+            pick = rng.choices(free, weights=w, k=1)[0]
+            free.remove(pick)
+            have.add(pick["id"])
+            db.execute("INSERT INTO mission_draws (username, period, period_key, mission_id) VALUES (?, ?, ?, ?) "
+                       "ON CONFLICT (username, period, period_key, mission_id) DO NOTHING", (username, period, key, pick["id"]))
+        # only the slots count: if the Owner lowered the number of slots, show the first ones
+        chosen |= set(sorted(have)[:max(_slots(period), 0)] if len(have) > _slots(period) else have)
+    return chosen
+
+
 def _mission_view(user, m, now=None):
     key = period_key(m["period"], now)
     done = bool(db.query("SELECT 1 AS x FROM mission_claims WHERE username = ? AND mission_id = ? AND period_key = ?",
                          (user["username"], m["id"], key)))
     value = progress(user, m, now)
-    return {"id": m["id"], "title": m["title"], "kind": m["kind"], "target": m["target"], "period": m["period"],
-            "reward": m["reward"], "active": bool(m["active"]), "progress": min(value, m["target"]),
-            "claimed": done, "claimable": (not done) and value >= m["target"]}
+    rar = RARITIES.get(m["rarity"], RARITIES["common"])
+    out = {"id": m["id"], "title": m["title"], "kind": m["kind"], "target": m["target"], "period": m["period"],
+           "reward": m["reward"], "active": bool(m["active"]), "progress": min(value, m["target"]),
+           "claimed": done, "claimable": (not done) and value >= m["target"],
+           "rarity": m["rarity"], "rarity_label": rar["label"], "rarity_color": rar["color"],
+           "chance": rarity_chances().get(m["rarity"], 0), "resets_in": seconds_until_reset(m["period"], now)}
+    if m["kind"] == "translate":
+        out["tasks"] = translation_tasks(user["username"], m, key)
+    return out
 
 
 @bp.get("/missions")
 @perm_required("missions.use")
 def list_missions():
-    if not appsettings.get()["missions"]["enabled"]:
+    cfg = appsettings.get()["missions"]
+    if not cfg["enabled"]:
         return jsonify({"enabled": False, "missions": [], "kinds": KINDS})
+    allowed = ensure_draws(g.user["username"])
     rows = db.query("SELECT * FROM missions WHERE active = 1 ORDER BY id")
-    return jsonify({"enabled": True, "missions": [_mission_view(g.user, m) for m in rows], "kinds": KINDS})
+    if allowed is not None:
+        rows = [m for m in rows if m["id"] in allowed]
+    return jsonify({"enabled": True, "mode": cfg.get("mode"), "missions": [_mission_view(g.user, m) for m in rows],
+                    "kinds": KINDS, "rarities": {k: {**v, "chance": rarity_chances()[k]} for k, v in RARITIES.items()}})
 
 
 @bp.post("/missions/<int:mid>/claim")
@@ -121,6 +211,9 @@ def claim(mid):
     if not rows or not appsettings.get()["missions"]["enabled"]:
         raise ApiError("Mission not found.", 404)
     m = rows[0]
+    allowed = ensure_draws(g.user["username"])
+    if allowed is not None and mid not in allowed:       # random mode: only the missions drawn for YOU can be collected
+        raise ApiError("Mission not found.", 404)
     if progress(g.user, m) < m["target"]:
         raise ApiError("You haven't finished this mission yet.", 400)
     key = period_key(m["period"])
@@ -135,32 +228,157 @@ def claim(mid):
     return jsonify({"coins": coins, "reward": m["reward"]})
 
 
+# ---------------------------------------------------------------- translation missions
+def translation_tasks(username, mission, key):
+    """The texts a person has to translate for this mission and period (drawn once, then kept)."""
+    rows = db.query("SELECT t.id, t.item_id, t.answer, t.status, t.note, i.source, i.hint FROM translation_tasks t "
+                    "JOIN translation_items i ON i.id = t.item_id WHERE t.username = ? AND t.mission_id = ? AND t.period_key = ? ORDER BY t.id",
+                    (username, mission["id"], key))
+    need_n = mission["target"] - len(rows)
+    if need_n > 0:
+        used = {r["item_id"] for r in rows}
+        # texts this person already had approved are not given again
+        done = {r["item_id"] for r in db.query("SELECT item_id FROM translation_tasks WHERE username = ? AND status = 'approved'", (username,))}
+        pool = [i for i in db.query("SELECT id FROM translation_items WHERE active = 1") if i["id"] not in used and i["id"] not in done]
+        random.shuffle(pool)
+        for item in pool[:need_n]:
+            db.execute("INSERT INTO translation_tasks (username, mission_id, period_key, item_id, created) VALUES (?, ?, ?, ?, ?)",
+                       (username, mission["id"], key, item["id"], time.time()))
+        rows = db.query("SELECT t.id, t.item_id, t.answer, t.status, t.note, i.source, i.hint FROM translation_tasks t "
+                        "JOIN translation_items i ON i.id = t.item_id WHERE t.username = ? AND t.mission_id = ? AND t.period_key = ? ORDER BY t.id",
+                        (username, mission["id"], key))
+    return rows
+
+
+@bp.post("/missions/<int:mid>/translate")
+@perm_required("missions.use")
+def submit_translation(mid):
+    rows = db.query("SELECT * FROM missions WHERE id = ? AND active = 1 AND kind = 'translate'", (mid,))
+    if not rows:
+        raise ApiError("Mission not found.", 404)
+    m = rows[0]
+    allowed = ensure_draws(g.user["username"])
+    if allowed is not None and mid not in allowed:
+        raise ApiError("Mission not found.", 404)
+    answers = json_body().get("answers")
+    if not isinstance(answers, dict) or len(answers) > 50:
+        raise ApiError("Invalid answers.")
+    key = period_key(m["period"])
+    mine = {t["id"]: t for t in translation_tasks(g.user["username"], m, key)}
+    sent = 0
+    for tid, text in answers.items():
+        task = mine.get(int(tid)) if str(tid).isdigit() else None
+        text = str(text).strip()[:400]
+        if not task or task["status"] in ("approved", "submitted") or not text:
+            continue                                   # approved or waiting for the check: can not be changed
+        db.execute("UPDATE translation_tasks SET answer = ?, status = 'submitted', submitted = ?, note = '' WHERE id = ? AND username = ?",
+                   (text, time.time(), task["id"], g.user["username"]))
+        sent += 1
+    if sent:
+        notify.notify_perm("translations.review", "mission", f"{g.user['display_name']} sent {sent} translation(s) to check.", "#/missions", exclude=(g.user["username"],))
+    return jsonify({"message": f"{sent} translation(s) sent. An admin checks them.", "sent": sent})
+
+
+@bp.get("/translations/review")
+@perm_required("translations.review")
+def review_list():
+    rows = db.query("SELECT t.id, t.username, t.answer, t.submitted, i.source, i.hint FROM translation_tasks t "
+                    "JOIN translation_items i ON i.id = t.item_id WHERE t.status = 'submitted' ORDER BY t.submitted LIMIT 100")
+    users = storage.read("users")
+    for r in rows:
+        u = find_user(users, r["username"])
+        r["display_name"] = u["display_name"] if u else r["username"]
+    return jsonify({"items": rows})
+
+
+@bp.post("/translations/<int:tid>/review")
+@perm_required("translations.review")
+def review_one(tid):
+    data = json_body()
+    approve = data.get("approve") is True
+    note = str(data.get("note", "")).strip()[:200]
+    rows = db.query("SELECT * FROM translation_tasks WHERE id = ? AND status = 'submitted'", (tid,))
+    if not rows:
+        raise ApiError("Nothing to check here (already done?).", 404)
+    task = rows[0]
+    if task["username"].lower() == g.user["username"].lower() and not perms.is_owner(g.user):
+        raise ApiError("You can not check your own translation.", 403)
+    db.execute("UPDATE translation_tasks SET status = ?, reviewed_by = ?, reviewed_at = ?, note = ? WHERE id = ?",
+               ("approved" if approve else "open", g.user["username"], time.time(), note, tid))
+    # a rejected translation goes back to "open" so the person can try again (the note says what was wrong)
+    notify.notify(task["username"], "mission", "Your translation was approved." if approve else "A translation needs another try."
+                  + (f" {note}" if note else ""), "#/missions")
+    audit.log(g.user["username"], "translation_review", task["username"], "approved" if approve else "rejected")
+    return jsonify({"message": "Saved."})
+
+
+@bp.get("/translations/items")
+@perm_required("missions.manage")
+def item_list():
+    return jsonify({"items": db.query("SELECT * FROM translation_items ORDER BY id DESC LIMIT 300")})
+
+
+@bp.post("/translations/items")
+@perm_required("missions.manage")
+def item_add():
+    data = json_body()
+    source = str(data.get("source", "")).strip()
+    if not 2 <= len(source) <= 300:
+        raise ApiError("The text needs 2 to 300 characters.")
+    db.execute("INSERT INTO translation_items (source, hint) VALUES (?, ?)", (source, str(data.get("hint", "")).strip()[:200]))
+    return jsonify({"message": "Added."}), 201
+
+
+@bp.delete("/translations/items/<int:iid>")
+@perm_required("missions.manage")
+def item_delete(iid):
+    db.execute("UPDATE translation_items SET active = 0 WHERE id = ?", (iid,))
+    return jsonify({"message": "Removed."})
+
+
+def seed_translation_items():
+    if db.query("SELECT 1 AS x FROM translation_items LIMIT 1"):
+        return
+    for text, hint in [("Write a message", "Button text in the chat"), ("Mark all as read", ""), ("Create account", ""),
+                       ("Forgot your password?", ""), ("Nothing here yet", "empty list"), ("Rent a rank", ""),
+                       ("Start page after login", ""), ("Delete my account", ""), ("Download my data", ""),
+                       ("Your password is wrong.", "error message"), ("The upload failed. Check your connection.", "error message"),
+                       ("Send a friend request", ""), ("Notifications", ""), ("Collect your reward", ""),
+                       ("This file type is not allowed.", "error message"), ("Choose a design", "")]:
+        db.execute("INSERT INTO translation_items (source, hint) VALUES (?, ?)", (text, hint))
+
+
 def _mission_input(data):
     title = str(data.get("title", "")).strip()
     if not 3 <= len(title) <= 80:
         raise ApiError("The title needs 3 to 80 characters.")
     if data.get("kind") not in KINDS:
         raise ApiError("Unknown mission type.")
-    if data.get("period") not in ("daily", "weekly"):
-        raise ApiError("Period must be daily or weekly.")
+    if data.get("period") not in PERIODS:
+        raise ApiError("The reset must be hourly, daily or weekly.")
+    rarity = data.get("rarity", "common")
+    if rarity not in RARITIES:
+        raise ApiError("Unknown rarity.")
     for key, hi in (("target", 10000), ("reward", 100000)):
         v = data.get(key)
         if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= hi:
             raise ApiError(f"'{key}' must be a whole number between 1 and {hi}.")
-    return title, data["kind"], data["period"], data["target"], data["reward"]
+    return title, data["kind"], data["period"], data["target"], data["reward"], rarity
 
 
 @bp.get("/missions/manage")
 @perm_required("missions.manage")
 def manage_list():
-    return jsonify({"missions": db.query("SELECT * FROM missions ORDER BY id"), "kinds": KINDS})
+    return jsonify({"missions": db.query("SELECT * FROM missions ORDER BY id"), "kinds": KINDS, "periods": PERIODS,
+                    "rarities": {k: {**v, "chance": rarity_chances()[k]} for k, v in RARITIES.items()}})
 
 
 @bp.post("/missions")
 @perm_required("missions.manage")
 def create_mission():
-    title, kind, period, target, reward = _mission_input(json_body())
-    db.execute("INSERT INTO missions (title, kind, target, period, reward) VALUES (?, ?, ?, ?, ?)", (title, kind, target, period, reward))
+    title, kind, period, target, reward, rarity = _mission_input(json_body())
+    db.execute("INSERT INTO missions (title, kind, target, period, reward, rarity) VALUES (?, ?, ?, ?, ?, ?)",
+               (title, kind, target, period, reward, rarity))
     audit.log(g.user["username"], "mission_create", title)
     return jsonify({"message": "Mission created."}), 201
 
@@ -169,9 +387,9 @@ def create_mission():
 @perm_required("missions.manage")
 def edit_mission(mid):
     data = json_body()
-    title, kind, period, target, reward = _mission_input(data)
-    n = db.execute("UPDATE missions SET title = ?, kind = ?, period = ?, target = ?, reward = ?, active = ? WHERE id = ?",
-                   (title, kind, period, target, reward, 1 if data.get("active", True) is True else 0, mid))
+    title, kind, period, target, reward, rarity = _mission_input(data)
+    n = db.execute("UPDATE missions SET title = ?, kind = ?, period = ?, target = ?, reward = ?, rarity = ?, active = ? WHERE id = ?",
+                   (title, kind, period, target, reward, rarity, 1 if data.get("active", True) is True else 0, mid))
     if not n:
         raise ApiError("Mission not found.", 404)
     audit.log(g.user["username"], "mission_edit", f"#{mid}")
@@ -182,20 +400,25 @@ def edit_mission(mid):
 @perm_required("missions.manage")
 def delete_mission(mid):
     db.execute("DELETE FROM missions WHERE id = ?", (mid,))
+    db.execute("DELETE FROM mission_draws WHERE mission_id = ?", (mid,))
     audit.log(g.user["username"], "mission_delete", f"#{mid}")
     return jsonify({"message": "Deleted."})
 
 
 def seed_missions():
     """A few starter missions on the very first start (the Owner can change or delete them)."""
+    seed_translation_items()
     if db.query("SELECT 1 AS x FROM missions LIMIT 1"):
         return
-    for title, kind, target, period, reward in [
-            ("Write 10 messages today", "messages", 10, "daily", 20),
-            ("React to 5 messages today", "reactions", 5, "daily", 10),
-            ("Log in today", "logins", 1, "daily", 5),
-            ("Write 100 messages this week", "messages", 100, "weekly", 120)]:
-        db.execute("INSERT INTO missions (title, kind, target, period, reward) VALUES (?, ?, ?, ?, ?)", (title, kind, target, period, reward))
+    for title, kind, target, period, reward, rarity in [
+            ("Write 10 messages today", "messages", 10, "daily", 20, "common"),
+            ("React to 5 messages today", "reactions", 5, "daily", 10, "common"),
+            ("Log in today", "logins", 1, "daily", 5, "common"),
+            ("Free daily bonus", "none", 1, "daily", 3, "uncommon"),
+            ("Translate 5 texts into German", "translate", 5, "weekly", 150, "rare"),
+            ("Write 100 messages this week", "messages", 100, "weekly", 120, "common")]:
+        db.execute("INSERT INTO missions (title, kind, target, period, reward, rarity) VALUES (?, ?, ?, ?, ?, ?)",
+                   (title, kind, target, period, reward, rarity))
 
 
 # ---------------------------------------------------------------- shop: rent a rank
@@ -281,6 +504,34 @@ def gift_coins():
     notify.notify(target["username"], "gift", f"{g.user['display_name']} gave you {amount} coins.", "#/missions")
     audit.log(g.user["username"], "gift_coins", target["username"], str(amount))
     return jsonify({"message": f"{amount} coins sent to {target['display_name']}."})
+
+
+@bp.post("/coins/send")
+@perm_required("coins.send")
+def send_coins():
+    """Everybody may send their OWN coins to somebody else (with a daily limit the Owner sets)."""
+    data = json_body()
+    me = g.user
+    target = find_user(storage.read("users"), data.get("username"))
+    amount = data.get("amount")
+    if not target or target["status"] != "active":
+        raise ApiError("User not found.", 404)
+    if target["username"].lower() == me["username"].lower():
+        raise ApiError("You can not send coins to yourself.")
+    if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= 1_000_000:
+        raise ApiError("The amount must be a whole number of coins.")
+    cap = appsettings.get()["coins"]["user_daily_send_cap"]
+    since = _period_start("daily").timestamp()
+    sent = db.query("SELECT COALESCE(-SUM(delta), 0) AS s FROM coin_log WHERE username = ? AND reason LIKE 'Sent to%' AND delta < 0 AND ts >= ?",
+                    (me["username"], since))[0]["s"]
+    if sent + amount > cap:
+        raise ApiError(f"You can send at most {cap} coins per day (you already sent {int(sent)}).", 403)
+    with db.transaction() as tx:                      # both sides or none
+        add_coins(tx, me["username"], -amount, f"Sent to {target['display_name']}", me["username"])
+        add_coins(tx, target["username"], amount, f"From {me['display_name']}", me["username"])
+        coins = balance(me["username"], tx)
+    notify.notify(target["username"], "gift", f"{me['display_name']} sent you {amount} coins.", "#/missions")
+    return jsonify({"coins": coins, "message": f"{amount} coins sent to {target['display_name']}."})
 
 
 @bp.post("/ranks/gift")

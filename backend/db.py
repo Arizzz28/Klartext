@@ -76,6 +76,16 @@ def placeholders(items):
     return ",".join("?" * len(items))
 
 
+def add_column(table, column, decl):
+    """Adds a column to an existing table if it is not there yet (safe to call on every start)."""
+    if _pg:
+        execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {decl}")
+    else:
+        have = [r["name"] for r in query(f"PRAGMA table_info({table})")]
+        if column not in have:
+            execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def init():
     pk = "BIGSERIAL PRIMARY KEY" if _pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
     statements = [
@@ -175,5 +185,40 @@ def init():
             created DOUBLE PRECISION NOT NULL)""",
         "CREATE TABLE IF NOT EXISTS game_scores (game TEXT NOT NULL, username TEXT NOT NULL, best BIGINT NOT NULL DEFAULT 0, plays BIGINT NOT NULL DEFAULT 0, PRIMARY KEY (game, username))",
     ]
+    statements += V4_STATEMENTS(pk)
     for statement in statements:
         execute(statement)
+    # columns added after Version 3 (a database from an older version gets them here, nothing is lost)
+    add_column("missions", "rarity", "TEXT NOT NULL DEFAULT 'common'")
+    add_column("missions", "min_rank", "TEXT NOT NULL DEFAULT ''")
+    add_column("offers", "kind", "TEXT NOT NULL DEFAULT 'offer'")
+
+
+def V4_STATEMENTS(pk):
+    """Tables added in Version 4 (random missions, translations, games, ...)."""
+    return [
+        "CREATE TABLE IF NOT EXISTS mission_draws (username TEXT NOT NULL, period TEXT NOT NULL, period_key TEXT NOT NULL, "
+        "mission_id BIGINT NOT NULL, PRIMARY KEY (username, period, period_key, mission_id))",
+        f"""CREATE TABLE IF NOT EXISTS translation_items (
+            id {pk}, source TEXT NOT NULL, hint TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1)""",
+        f"""CREATE TABLE IF NOT EXISTS translation_tasks (
+            id {pk}, username TEXT NOT NULL, mission_id BIGINT NOT NULL, period_key TEXT NOT NULL, item_id BIGINT NOT NULL,
+            answer TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open', created DOUBLE PRECISION NOT NULL,
+            submitted DOUBLE PRECISION, reviewed_by TEXT, reviewed_at DOUBLE PRECISION, note TEXT NOT NULL DEFAULT '')""",
+        "CREATE INDEX IF NOT EXISTS idx_transtasks ON translation_tasks (username, mission_id, period_key)",
+        f"""CREATE TABLE IF NOT EXISTS matches (
+            id {pk}, game TEXT NOT NULL, p0 TEXT NOT NULL, p1 TEXT NOT NULL, level TEXT NOT NULL DEFAULT 'easy',
+            status TEXT NOT NULL DEFAULT 'invited', state TEXT NOT NULL DEFAULT '{{}}', rev INTEGER NOT NULL DEFAULT 0,
+            created DOUBLE PRECISION NOT NULL, updated DOUBLE PRECISION NOT NULL, winner TEXT NOT NULL DEFAULT '')""",
+        "CREATE INDEX IF NOT EXISTS idx_matches_p0 ON matches (p0, status)",
+        "CREATE INDEX IF NOT EXISTS idx_matches_p1 ON matches (p1, status)",
+        "CREATE TABLE IF NOT EXISTS elo (game TEXT NOT NULL, username TEXT NOT NULL, rating INTEGER NOT NULL DEFAULT 1000, games INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (game, username))",
+        "CREATE TABLE IF NOT EXISTS pc_status (id INTEGER PRIMARY KEY, url TEXT NOT NULL DEFAULT '', ts DOUBLE PRECISION NOT NULL DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS streaks (username TEXT PRIMARY KEY, last_day TEXT NOT NULL DEFAULT '', streak INTEGER NOT NULL DEFAULT 0, best INTEGER NOT NULL DEFAULT 0)",
+        f"CREATE TABLE IF NOT EXISTS polls (id {pk}, author TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, created DOUBLE PRECISION NOT NULL, closed INTEGER NOT NULL DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS poll_votes (poll_id INTEGER NOT NULL, username TEXT NOT NULL, choice INTEGER NOT NULL, PRIMARY KEY (poll_id, username))",
+        "CREATE TABLE IF NOT EXISTS prank_optin (username TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0)",
+        f"CREATE TABLE IF NOT EXISTS prank_inbox (id {pk}, to_user TEXT NOT NULL, from_user TEXT NOT NULL, kind TEXT NOT NULL, created DOUBLE PRECISION NOT NULL, seen INTEGER NOT NULL DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS idx_prank_to ON prank_inbox (to_user, seen)",
+        "CREATE TABLE IF NOT EXISTS game_points (username TEXT NOT NULL, game TEXT NOT NULL, points INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (username, game))",
+    ]

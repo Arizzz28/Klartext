@@ -26,6 +26,8 @@ export function ownerTabs({ state, reload, when }) {
       const name = h("input", { class: "input", maxlength: "24", value: r.name, required: true });
       const level = h("input", { class: "input", type: "number", min: "1", max: "99", value: String(r.level), disabled: Boolean(r.is_owner) });
       const color = h("input", { type: "color", value: r.color || "#888888" });
+      const offered = h("input", { type: "checkbox", checked: r.offered !== false });
+      const perks = h("textarea", { class: "input", rows: "2", maxlength: "400", placeholder: "Extra advantages in your own words (shown in the Plans tab)" }, r.perks_text || "");
       const perms = new Set(r.perms);
       const designs = new Set(r.designs);
       const permBoxes = Object.entries(groups).map(([group, items]) => h("fieldset", { class: "perm-group" }, h("legend", {}, group),
@@ -41,13 +43,15 @@ export function ownerTabs({ state, reload, when }) {
       });
       const body = h("form", { class: "card rank-form", onSubmit: async (e) => {
         e.preventDefault();
-        const payload = { name: name.value, level: Number(level.value), color: color.value, perms: [...perms], designs: [...designs] };
+        const payload = { name: name.value, level: Number(level.value), color: color.value, perms: [...perms], designs: [...designs], offered: offered.checked, perks_text: perks.value };
         const res = await act(isNew ? post("/api/admin/ranks", payload) : put(`/api/admin/ranks/${r.id}`, payload), reload);
         if (res) toast("Saved.");
       } },
       h("h2", {}, isNew ? "New rank" : `Edit ${r.name}`),
       r.is_owner ? h("p", { class: "muted" }, "The Owner rank always has every permission. You can only rename it or change its colour.") : null,
       h("div", { class: "grid-2" }, field("Name", name), field("Level (1–99, higher = more power)", level), field("Colour", color)),
+      h("label", { class: "choice" }, offered, h("span", {}, h("strong", {}, "Show this rank in the Plans tab"), h("small", {}, "Off = hidden from the Plans tab (nothing is deleted, people who have it keep it)"))),
+      field("Advantages (text)", perks),
       h("h3", {}, "Design modes"), h("div", { class: "choices" }, ...designBoxes),
       h("h3", {}, "Permissions"), ...permBoxes,
       h("div", { class: "button-row" }, h("button", { class: "btn primary", type: "submit" }, "Save"),
@@ -143,6 +147,29 @@ export function ownerTabs({ state, reload, when }) {
     const imgPreview = h("div", { class: "loading-preview" }, preview.image ? h("img", { src: preview.image, alt: "" }) : h("span", { class: "muted" }, "No picture set."));
     const musicPreview = h("div", {}, preview.music ? h("audio", { controls: true, src: preview.music }) : h("span", { class: "muted" }, "No music set."));
     const status = h("p", { class: "muted" });
+    // ---- games (admins decide: on/off, order, points needed to unlock the next game, switched-off games)
+    const gl = await get("/api/games").catch(() => ({ games: [] }));
+    const gset = s.games || { enabled: true, sequential: true, order: [], unlock: {}, disabled: [] };
+    const gamesOn = check(gset.enabled, "Games are allowed");
+    const gamesSeq = check(gset.sequential, "Games unlock one after the other (by points)");
+    let gOrder = gl.games.map((x) => x.id);
+    const gInfo = Object.fromEntries(gl.games.map((x) => [x.id, x]));
+    const gPoints = Object.fromEntries(gl.games.map((x) => [x.id, num(gset.unlock?.[x.id] ?? x.unlock_points, 0, 100000)]));
+    const gOff = Object.fromEntries(gl.games.map((x) => [x.id, check((gset.disabled || []).includes(x.id), "off")]));
+    const gamesList = h("div");
+    function drawGames() {
+      gamesList.replaceChildren(...gOrder.map((id, i) => h("div", { class: "row" }, h("strong", {}, `${i + 1}. ${gInfo[id].name}`),
+        h("button", { class: "btn small", type: "button", disabled: i === 0, onClick: () => { [gOrder[i - 1], gOrder[i]] = [gOrder[i], gOrder[i - 1]]; drawGames(); } }, "↑"),
+        h("button", { class: "btn small", type: "button", disabled: i === gOrder.length - 1, onClick: () => { [gOrder[i + 1], gOrder[i]] = [gOrder[i], gOrder[i + 1]]; drawGames(); } }, "↓"),
+        field("Points needed in the game before this one", gPoints[id]), gOff[id].row)));
+    }
+    drawGames();
+    const gamesCard = h("section", { class: "card" }, h("h2", {}, "Games"), gamesOn.row, gamesSeq.row,
+      h("p", { class: "muted" }, "Order and unlock points only matter when the games unlock one after the other. The first game a person may play is always open. Only games that a rank includes (Owner: Ranks) appear for that rank."), gamesList);
+    function collectGames() {
+      return { games: { enabled: gamesOn.el.checked, sequential: gamesSeq.el.checked, order: gOrder, disabled: gOrder.filter((id) => gOff[id].el.checked),
+        unlock: Object.fromEntries(gOrder.map((id) => [id, Number(gPoints[id].value)])) } };
+    }
     function assetButtons(kind, field_, accept, previewEl, render) {
       const pick = h("button", { class: "btn small", type: "button", onClick: () => {
         const input = h("input", { type: "file", accept });
@@ -182,8 +209,18 @@ export function ownerTabs({ state, reload, when }) {
           h("button", { class: "btn small danger-text", type: "button", onClick: () => { items.splice(idx, 1); drawItems(); } }, "Remove"));
       }));
       drawItems();
-      const coinCap = num(s.coins.admin_daily_gift_cap, 0, 1000000), startCoins = num(s.coins.start_coins, 0, 1000000);
+      const coinCap = num(s.coins.admin_daily_gift_cap, 0, 1000000), startCoins = num(s.coins.start_coins, 0, 1000000), sendCap = num(s.coins.user_daily_send_cap, 0, 1000000);
       const missionsOn = check(s.missions.enabled, "Missions are switched on");
+      const mMode = h("select", { class: "input" }, [["random", "Random: everybody gets their own missions"], ["all", "Everybody sees every mission"]].map(([v, l]) => h("option", { value: v, selected: s.missions.mode === v }, l)));
+      const mHour = num(s.missions.slots_hourly, 0, 10), mDay = num(s.missions.slots_daily, 0, 20), mWeek = num(s.missions.slots_weekly, 0, 20);
+      const rarityNames = { common: "Common", uncommon: "Uncommon", rare: "Rare", super_rare: "SUPER RARE", impossible: "IMPOSSIBLE" };
+      const mWeights = Object.fromEntries(Object.keys(rarityNames).map((k) => [k, num(s.missions[`w_${k}`], 0, 1000)]));
+      const pcOn = check(s.pc?.enabled, "Use my PC as an extra server when it is online");
+      const pcInfo = h("p", { class: "muted" }, "Loading status…");
+      get("/api/pc/status").then((x) => { pcInfo.textContent = !x.configured ? "Not set up: add PC_SECRET on Render (README, section PC server)." : x.online ? `PC is online (${x.url}).` : "PC is offline right now."; }).catch(() => { pcInfo.textContent = ""; });
+      const winMax = num(s.windows?.max_open ?? 4, 1, 12);
+      const supportOn = check(s.plans.support_enabled, "Show the “support the servers” note in the Plans tab");
+      const supportText = h("textarea", { class: "input", rows: "3", maxlength: "500" }, s.plans.support_text);
       const lg = s.legal;
       const lOp = h("input", { class: "input", maxlength: "120", value: lg.operator_name }), lAddr = h("textarea", { class: "input", rows: "2", maxlength: "300" }, lg.operator_address);
       const lMail = h("input", { class: "input", maxlength: "120", value: lg.operator_email }), lPhone = h("input", { class: "input", maxlength: "60", value: lg.operator_phone });
@@ -191,9 +228,19 @@ export function ownerTabs({ state, reload, when }) {
       ownerBlock = h("div", {},
         h("section", { class: "card" }, h("h2", {}, "Owner: accounts and offers"), field("Rank of new accounts", defRank), offersOn.row, field("Rules text for Pro offers", offerRules)),
         h("section", { class: "card" }, h("h2", {}, "Owner: statistics admins can see"), h("p", { class: "muted" }, "You always see all of them."), ...statBoxes.map((b) => b.row)),
-        h("section", { class: "card" }, h("h2", {}, "Owner: coins, missions and the shop"), missionsOn.row, shopOn.row,
-          h("div", { class: "grid-2" }, field("Longest rental (days)", shopMax), field("Longest gift by admins (days)", giftMax), field("Coins an admin may gift per day", coinCap), field("Coins for new accounts", startCoins)),
+        h("section", { class: "card" }, h("h2", {}, "Owner: coins, missions and the shop"), missionsOn.row, field("How missions are given out", mMode),
+          h("div", { class: "grid-2" }, field("Missions per person: every hour", mHour), field("Missions per person: every day", mDay), field("Missions per person: every week", mWeek)),
+          h("h3", {}, "How often each rarity is drawn (a higher number = more often)"),
+          h("div", { class: "grid-2" }, ...Object.entries(rarityNames).map(([k, l]) => field(l, mWeights[k]))),
+          h("p", { class: "hint" }, "Example: 60 / 25 / 10 / 4 / 1 means about 60 of 100 draws are Common and 1 of 100 is IMPOSSIBLE. Set a number to 0 to never draw that rarity. Each mission gets its rarity and reset time when you create it (Missions tab, Staff tools)."),
+          shopOn.row,
+          h("div", { class: "grid-2" }, field("Longest rental (days)", shopMax), field("Longest gift by admins (days)", giftMax), field("Coins an admin may gift per day", coinCap), field("Coins for new accounts", startCoins), field("Coins a person may send to friends per day", sendCap)),
           h("h3", {}, "Shop items"), itemsBox, h("button", { class: "btn small", type: "button", onClick: () => { if (lowRanks.length) { items.push({ rank_id: lowRanks[0].id, price: 100, days: 1 }); drawItems(); } } }, "Add item")),
+        h("section", { class: "card" }, h("h2", {}, "Owner: PC server and windows"), pcOn.row, pcInfo,
+          h("p", { class: "hint" }, "Who may use the PC server is a permission (Ranks → \"Use the PC server\"); each person also switches it on for themselves in Settings. Without the PC (or when it is off) everybody uses the normal server."),
+          field("Windows a person may have open at once (desktop mode)", winMax)),
+        h("section", { class: "card" }, h("h2", {}, "Owner: Plans tab"), supportOn.row, field("Text of the note", supportText),
+          h("p", { class: "hint" }, "Careful: no payment is built in on purpose. If you really take money from people, it changes the legal situation (imprint, taxes, minors). Talk to your parents first.")),
         h("section", { class: "card" }, h("h2", {}, "Owner: AI, ads and visitors"), aiOn.row, h("div", { class: "grid-2" }, field("AI questions per person and day", aiLimit), field("Most chat messages sent as context", aiCtx)),
           adsOn.row, field("Show an ad every … visits", adsEvery), visOn.row, field("Keep visitor entries (days)", visDays)),
         h("section", { class: "card" }, h("h2", {}, "Owner: legal details (shown in the terms and the imprint)"),
@@ -205,7 +252,10 @@ export function ownerTabs({ state, reload, when }) {
         ai: { enabled: aiOn.el.checked, daily_limit: Number(aiLimit.value), max_context_messages: Number(aiCtx.value) },
         ads: { enabled: adsOn.el.checked, every_n_visits: Number(adsEvery.value) }, visitors: { enabled: visOn.el.checked, keep_days: Number(visDays.value) },
         shop: { enabled: shopOn.el.checked, max_days: Number(shopMax.value), gift_max_days: Number(giftMax.value), items },
-        coins: { admin_daily_gift_cap: Number(coinCap.value), start_coins: Number(startCoins.value) }, missions: { enabled: missionsOn.el.checked },
+        coins: { admin_daily_gift_cap: Number(coinCap.value), start_coins: Number(startCoins.value), user_daily_send_cap: Number(sendCap.value) },
+        pc: { enabled: pcOn.el.checked }, windows: { max_open: Number(winMax.value) },
+        plans: { support_enabled: supportOn.el.checked, support_text: supportText.value }, missions: { enabled: missionsOn.el.checked, mode: mMode.value, slots_hourly: Number(mHour.value), slots_daily: Number(mDay.value), slots_weekly: Number(mWeek.value),
+          ...Object.fromEntries(Object.entries(mWeights).map(([k, el]) => [`w_${k}`, Number(el.value)])) },
         legal: { operator_name: lOp.value, operator_address: lAddr.value, operator_email: lMail.value, operator_phone: lPhone.value, min_age: lAge.value, note: lNote.value },
       });
     }
@@ -221,7 +271,7 @@ export function ownerTabs({ state, reload, when }) {
           uploads_enabled: uploadsOn.el.checked, max_image_mb: Number(maxImage.value), max_video_mb: Number(maxVideo.value),
           max_file_mb: Number(maxFile.value), user_quota_mb: Number(quota.value),
           blocked_extensions: blocked.value.split(",").map((x) => x.trim()).filter(Boolean),
-          loading, background: { default: bgDefault.value, allow_custom: bgCustom.el.checked }, ...collectOwner(),
+          loading, background: { default: bgDefault.value, allow_custom: bgCustom.el.checked }, ...collectGames(), ...collectOwner(),
         });
         toast("Settings saved.");
         assets.image = assets.music = undefined;
@@ -241,6 +291,7 @@ export function ownerTabs({ state, reload, when }) {
         field("Music volume", volume), allowImg.row, allowMusic.row, allowMute.row,
         h("div", { class: "grid-2" }, field("Max picture size (MB)", maxLoadImg), field("Max music size (MB)", maxLoadMusic)), status),
       h("section", { class: "card" }, h("h2", {}, "Chat backgrounds"), field("Default background for everybody", bgDefault), bgCustom.row),
+      gamesCard,
       ownerBlock || h("p", { class: "muted" }, "More settings (ranks of new accounts, shop, AI, statistics, legal details) belong to the Owner."),
       h("button", { class: "btn primary", type: "submit" }, "Save settings"));
   }

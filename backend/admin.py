@@ -481,7 +481,10 @@ def _clean_rank(data, existing=None):
     designs = data.get("designs", ["classic"])
     if not isinstance(designs, list) or any(d not in perms.DESIGNS for d in designs) or not designs:
         raise ApiError("Pick at least one valid design.")
-    return {"name": name, "level": level, "color": color, "perms": sorted(set(keys)), "designs": [d for d in perms.DESIGNS if d in designs]}
+    offered = data["offered"] if isinstance(data.get("offered"), bool) else (existing or {}).get("offered", True)
+    perks = str(data.get("perks_text", (existing or {}).get("perks_text", ""))).strip()[:400]
+    return {"name": name, "level": level, "color": color, "perms": sorted(set(keys)), "designs": [d for d in perms.DESIGNS if d in designs],
+            "offered": offered, "perks_text": perks}
 
 
 @bp.post("/ranks")
@@ -515,7 +518,7 @@ def edit_rank(rid):
         else:
             if any(r["name"].lower() == str(data.get("name", "")).strip().lower() and r["id"] != rid for r in db_["ranks"].values()):
                 raise ApiError("A rank with this name already exists.", 409)
-            rank.update(_clean_rank(data))
+            rank.update(_clean_rank(data, rank))
     audit.log(g.user["username"], "rank_edit", rid)
     return jsonify({"message": "Saved."})
 

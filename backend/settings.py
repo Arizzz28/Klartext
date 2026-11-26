@@ -64,6 +64,7 @@ def public_config():
         "uploads": {"enabled": bool(s["uploads_enabled"] and objstore.enabled()), "max_image_mb": s["max_image_mb"],
                     "max_video_mb": s["max_video_mb"], "max_file_mb": s["max_file_mb"]},
         "background": s["background"], "presets": list(appsettings.PRESET_BACKGROUNDS), "start_page": s["start_page"],
+        "windows": s["windows"],
     })
 
 

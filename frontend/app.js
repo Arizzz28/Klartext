@@ -39,6 +39,19 @@ async function init() {
   }
   if (!state.me) return;
   try { state.config = await get("/api/config"); } catch { /* the app works without it */ }
+  window.addEventListener("chatisfying:pc-lost", () => toast("The PC server is not reachable. Using the normal server.", "info"));
+  if (state.can("pc.backend") && state.me.prefs?.use_pc) {         // the Owner's PC may do the computing while it is online
+    const { setBase: sb } = await import("./api.js");
+    const check = async (first) => {
+      try {
+        const r = await get("/api/pc/route");
+        sb(r.url);
+        if (first && r.message) toast(r.message, "info");
+      } catch { /* stay on the main server */ }
+    };
+    await check(true);
+    setInterval(() => { if (!document.hidden) check(false); }, 60000);
+  }
   window.addEventListener("storage", (e) => { if (e.key === "chatisfying_token") location.reload(); });
   window.addEventListener("chatisfying:consent", () => needConsent());
   window.addEventListener("chatisfying:read", () => refreshUnread());
@@ -69,7 +82,11 @@ async function start(app, loader) {
   window.addEventListener("hashchange", route);
   await refreshUnread();
   await route();
-  setInterval(refreshUnread, 8000);
+  setInterval(() => { if (!document.hidden) refreshUnread(); }, 10000);
+  if (state.can("tabs.prank")) {                         // a waiting prank (only if this person switched pranks on)
+    const { get: g2 } = await import("./api.js"), { showPrank } = await import("./pages/prank.js");
+    setInterval(async () => { if (document.hidden) return; try { const r = await g2("/api/prank/inbox"); if (r.prank) showPrank(r.prank.kind, r.prank.from); } catch { /* ignore */ } }, 20000);
+  }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshUnread(); });
   loader?.done();
   if (state.me.must_change_password) forcePasswordChange();
@@ -213,7 +230,10 @@ function onMeChanged() {
 }
 
 // ---------------------------------------------------------------- unread counters and notifications
+let unreadBusy = false, lastConfig = 0;
 async function refreshUnread() {
+  if (unreadBusy) return;                    // never pile up requests when the server is slow
+  unreadBusy = true;
   try {
     state.unread = await get("/api/unread");
     for (const [id, el] of Object.entries(badgeEls)) if (id !== "bell") setBadge(el, tabBadge(id));
@@ -222,9 +242,13 @@ async function refreshUnread() {
     const total = state.unread.chats + state.unread.groups;
     document.title = (total ? `(${total}) ` : "") + "Chatisfying · klartext";
     window.dispatchEvent(new CustomEvent("chatisfying:unread"));
-    state.config = { ...state.config, ...(await get("/api/config")) };      // also picks up a new announcement
-    if (bannerBox) drawBanner();
+    if (Date.now() - lastConfig > 60000) {      // the settings (announcement ...) change rarely: once a minute is enough
+      lastConfig = Date.now();
+      state.config = { ...state.config, ...(await get("/api/config")) };
+      if (bannerBox) drawBanner();
+    }
   } catch { /* not important enough to show an error */ }
+  unreadBusy = false;
 }
 
 async function showNotifications() {
@@ -285,13 +309,20 @@ function toggleBubblePopup(force) {
   const outside = (e) => { if (!popup.contains(e.target) && !bubbleEl?.contains(e.target) && !e.target.closest?.(".nav-more")) close(); };
   const tiles = availableTabs(state.me).map((t) => {
     const n = tabBadge(t.id);
-    const a = h("a", { class: "tile", href: `#/${t.id}`, onClick: close }, icon(t.icon), h("span", {}, t.label), n ? h("span", { class: "badge" }, String(n)) : null);
+    const winMode = state.can("layout.windows") && state.me.prefs?.windows?.on;
+    const a = h("a", { class: "tile", href: `#/${t.id}`, onClick: (e) => { close(); if (winMode) { e.preventDefault(); import("./windows.js").then((m) => m.openWindow(t, state, state.config?.windows?.max_open || 4)); } } }, icon(t.icon), h("span", {}, t.label), n ? h("span", { class: "badge" }, String(n)) : null);
     return a;
   });
   const popup = h("div", { class: "bubble-popup", role: "dialog", "aria-label": "All tabs" },
     h("div", { class: "tiles" }, tiles),
     h("div", { class: "popup-actions" },
       state.can("tabs.editor") ? h("button", { class: "btn small", type: "button", onClick: () => { close(); openTabEditor(state); } }, "Edit tabs") : null,
+      state.can("layout.windows") ? h("button", { class: "btn small", type: "button", onClick: async () => {
+        close();
+        const on = !state.me.prefs?.windows?.on;
+        try { state.me = await put("/api/me/prefs", { windows: { on } }); if (!on) (await import("./windows.js")).closeAll(); toast(on ? "Window mode on: tabs from the bubble open as windows." : "Window mode off."); }
+        catch (e) { toast(e.message, "error"); }
+      } }, state.me.prefs?.windows?.on ? "Window mode: off" : "Window mode: on") : null,
       state.can("tabs.bubble") ? h("button", { class: "btn small", type: "button", onClick: async () => {
         close();
         try { state.me = await put("/api/me/prefs", { bubble: { on: false, pos: state.me.prefs?.bubble?.pos || { x: 0.9, y: 0.8 } } }); drawBubble(); toast("Bubble hidden. You can turn it on again in Settings."); }

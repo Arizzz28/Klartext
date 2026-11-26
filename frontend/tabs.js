@@ -3,6 +3,7 @@
 import * as chats from "./pages/chats.js";
 import * as groups from "./pages/groups.js";
 import * as missions from "./pages/missions.js";
+import * as plansPage from "./pages/plans.js";
 import * as calendar from "./pages/calendar.js";
 import * as tasks from "./pages/tasks.js";
 import * as notes from "./pages/notes.js";
@@ -11,6 +12,8 @@ import * as search from "./pages/search.js";
 import * as music from "./pages/music.js";
 import * as visitors from "./pages/visitors.js";
 import * as games from "./pages/games.js";
+import * as prankPage from "./pages/prank.js";
+import * as funPage from "./pages/fun.js";
 import * as forum from "./pages/forum.js";
 import * as ai from "./pages/ai.js";
 import * as whatsnew from "./pages/whatsnew.js";
@@ -31,6 +34,7 @@ export const TABS = [
   { id: "chats", label: "Chats", icon: "chats", page: chats },
   { id: "groups", label: "Groups", icon: "groups", page: groups },
   { id: "missions", label: "Missions", icon: "missions", page: missions, perm: "missions.use" },
+  { id: "plans", label: "Plans", icon: "page", page: plansPage, perm: "tabs.plans" },
   { id: "calendar", label: "Calendar", icon: "calendar", page: calendar, perm: "tabs.calendar" },
   { id: "tasks", label: "Tasks", icon: "tasks", page: tasks, perm: "tabs.tasks" },
   { id: "notes", label: "Notes", icon: "notes", page: notes, perm: "tabs.notes" },
@@ -39,6 +43,8 @@ export const TABS = [
   { id: "music", label: "Music", icon: "music", page: music, perm: "tabs.music", pinned: false },
   { id: "visitors", label: "Visitors", icon: "visitors", page: visitors, perm: "tabs.visitors", pinned: false },
   { id: "games", label: "Games", icon: "games", page: games, perm: "tabs.games" },
+  { id: "prank", label: "Pranks", icon: "games", page: prankPage, perm: "tabs.prank", pinned: false },
+  { id: "fun", label: "Fun", icon: "games", page: funPage, perm: "tabs.fun" },
   { id: "forum", label: "Forum", icon: "forum", page: forum, perm: "tabs.forum" },
   { id: "ai", label: "AI", icon: "ai", page: ai, perm: "tabs.ai", pinned: false },
   { id: "whatsnew", label: "What's new", icon: "whatsnew", page: whatsnew },

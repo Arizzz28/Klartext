@@ -18,18 +18,24 @@ import ai
 import auth
 import chat_service
 import db
+import diag
 import economy
 import extras
 import games
 import groups
 import invitations
+import matches
 import messages
 import moderation
 import notes
 import notify
 import offers
 import perms
+import plans
 import planner
+import fun
+import pc
+import prank
 import settings
 import social
 import uploads
@@ -44,7 +50,7 @@ def create_app():
     app.config["MAX_CONTENT_LENGTH"] = 1_000_000     # reject huge requests
     # Login uses an Authorization header (not cookies), so other websites cannot make the browser
     # send credentials on their own. That is why classic CSRF tokens are not needed here.
-    CORS(app, origins=config.ALLOWED_ORIGINS, allow_headers=["Content-Type", "Authorization"])
+    CORS(app, origins=config.ALLOWED_ORIGINS, allow_headers=["Content-Type", "Authorization"], max_age=600)
     if config.PROXY_HOPS > 0:
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=config.PROXY_HOPS)
@@ -52,6 +58,7 @@ def create_app():
     db.init()
     # Version 3 start-up steps. All of them are safe to run again and again (they only fill in what is missing).
     perms.ensure_defaults()
+    perms.grant_new_defaults()
     perms.migrate_users()
     chat_service.migrate_legacy()
     notify.init_read_state()
@@ -59,7 +66,7 @@ def create_app():
     extras.seed_release()
 
     for module in (auth, users, accounts, messages, groups, invitations, admin, moderation, settings, uploads, notify, economy,
-                   offers, notes, planner, social, games, extras, ai):
+                   offers, notes, planner, social, games, matches, extras, ai, diag, plans, prank, pc, fun):
         app.register_blueprint(module.bp)
 
     # DEBUG ONLY: logs every request (method + path, never headers, bodies or query strings).

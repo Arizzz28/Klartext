@@ -46,8 +46,10 @@ BUILTIN = [
     ("admin.ads", "Manage ads and videos", "Admin"),
     ("admin.releases", "Publish What's New entries", "Admin"),
     ("coins.gift", "Gift coins", "Coins"),
+    ("coins.send", "Send own coins to other people", "Coins"),
     ("ranks.gift", "Gift temporary ranks", "Coins"),
     ("missions.manage", "Create and edit missions", "Coins"),
+    ("translations.review", "Check translations from translation missions", "Coins"),
     ("owner.ranks", "Create, edit and delete ranks (Owner)", "Owner"),
     ("owner.requests", "Decide permission requests (Owner)", "Owner"),
     ("owner.config", "Owner settings: designs, shop, stats, AI, ads (Owner)", "Owner"),
@@ -65,6 +67,13 @@ BUILTIN = [
     ("tabs.custom", "Own custom tabs", "Features"),
     ("tabs.notes", "Notes", "Features"),
     ("tabs.games", "Games tab", "Features"),
+    ("tabs.plans", "Plans tab (ranks, benefits, offers)", "Features"),
+    ("tabs.prank", "Prank tab (may send pranks to people who allowed them)", "Features"),
+    ("tabs.fun", "Fun tab (daily streak, badges, polls)", "Features"),
+    ("polls.create", "Create polls", "Features"),
+    ("prank.send", "Send pranks (only to people who allowed them)", "Features"),
+    ("layout.windows", "Desktop mode: movable windows, tabs folded into the bubble", "Layout"),
+    ("pc.backend", "Use the PC server of the owner when it is online", "Features"),
     ("tabs.forum", "Forum / suggestions", "Features"),
     ("tabs.ai", "AI tab", "Features"),
     ("tabs.bubble", "Floating tab bubble", "Layout"),
@@ -111,7 +120,7 @@ def _default_ranks():
     staff_mod = _PRO_PPP + ["chat.moderate", "mod.reports", "mod.mute", "admin.access", "admin.request"]
     staff_admin = staff_mod + ["admin.users", "admin.whitelist", "admin.groups", "admin.settings", "admin.audit",
                                "admin.stats", "admin.manage_ranks", "admin.offers", "admin.request", "coins.gift",
-                               "ranks.gift", "missions.manage", "admin.ads", "admin.releases", "chat.inspect"]
+                               "ranks.gift", "missions.manage", "translations.review", "admin.ads", "admin.releases", "chat.inspect"]
     return {
         "basic": {"name": "Basic", "level": 10, "color": "#6b7b78", "perms": _BASIC, "designs": ["classic"]},
         "pro": {"name": "Pro", "level": 20, "color": "#0e8a96", "perms": _PRO, "designs": ["classic", "paper"]},
@@ -125,6 +134,40 @@ def _default_ranks():
         "owner": {"name": "Owner", "level": 100, "color": "#e0a100", "perms": everything, "designs": list(DESIGNS),
                   "is_owner": True},
     }
+
+
+# Permissions that came with a later version, and the default ranks that get them. A rank that already exists is never
+# overwritten: a new permission is added ONCE (the Owner can take it away again, it will not come back).
+NEW_DEFAULTS = {
+    "translations.review": ["admin"],
+    "coins.send": ["basic", "pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"],
+    "tabs.plans": ["basic", "pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"],
+    "tabs.prank": ["pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"], "prank.send": ["pro_plus", "pro_pp", "pro_ppp", "admin"],
+    "pc.backend": ["pro_ppp"],
+    "tabs.fun": ["basic", "pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"], "polls.create": ["pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"],
+    "layout.windows": ["pro_plus", "pro_pp", "pro_ppp", "admin"],
+    "games.reaction": ["basic", "pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"], "games.aim": ["basic", "pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"],
+    "games.wordle": ["pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"], "games.checkers": ["pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"], "games.typing": ["pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"], "games.chess": ["pro", "pro_plus", "pro_pp", "pro_ppp", "mod", "admin"],
+    "games.maze3d": ["pro_plus", "pro_pp", "pro_ppp", "admin"], "games.shooter": ["pro_plus", "pro_pp", "pro_ppp", "admin"],
+}
+
+
+HIDDEN_BY_DEFAULT = ("pro_plus", "pro_pp", "pro_ppp")     # not shown in the Plans tab and not offered, until the Owner switches them on
+
+
+def grant_new_defaults():
+    with storage.transaction("ranks") as db:
+        for rank in db["ranks"].values():
+            if "offered" not in rank:
+                rank["offered"] = rank["id"] not in HIDDEN_BY_DEFAULT and not rank.get("is_owner") and rank.get("level", 0) < 60
+            seen = set(rank.get("seen_new", []))
+            for key, rank_ids in NEW_DEFAULTS.items():
+                if key in seen:
+                    continue
+                seen.add(key)
+                if rank["id"] in rank_ids and key not in rank["perms"] and not rank.get("is_owner"):
+                    rank["perms"] = list(rank["perms"]) + [key]
+            rank["seen_new"] = sorted(seen)
 
 
 def ensure_defaults():
